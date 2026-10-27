@@ -1,0 +1,30 @@
+// dex-validate-elements
+// Topic: Validation of DeX Data Elements
+// Type: concept
+// Status: draft
+:topic-id: dex-validate-elements
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: SME, laboratory device expert, GUDID, 510(k), LOINC, SNOMED CT
+:topic-summary: Explains that review by a laboratory device subject matter expert is built into each \
+  data collection step: confirming that GUDID and 510(k) records describe one device, \
+  filling decision-summary gaps, supplying package insert details and verifying LOINC and \
+  SNOMED CT codes.
+
+[[dex-validate-elements]]
+= Validation of DeX Data Elements
+
+indexterm:[workflow, SME validation]
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+Validation with a SME is built into each step of data collection,
+so the SME reviews information as it is gathered.
+Specifically,
+the laboratory device SME confirms that the GUDID and 510(k)
+records describe the same IVD device,
+fills gaps in decision summaries,
+supplies or confirms package insert details,
+and identifies associated devices when there is no clear description.
+The SME also validates LOINC® and SNOMED-CT® codes,
+confirming the information is current and accurate for the IVD
+device version under review.

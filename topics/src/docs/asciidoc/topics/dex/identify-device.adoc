@@ -1,0 +1,32 @@
+// dex-identify-device
+// Topic: Identifying the IVD Device & Associated Devices
+// Type: concept
+// Status: draft
+:topic-id: dex-identify-device
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Primary DI, test kit name, model number, performing laboratory
+:topic-summary: Describes how the team acquires the test kit name, model number and Primary Device \
+  Identifier from a performing laboratory, and why the Primary DI is the most reliable key \
+  for finding one IVD device in GUDID, with name and model search as the fallback.
+
+[[dex-identify-device]]
+= Identifying the IVD Device & Associated Devices
+
+indexterm:[device data, Primary DI]
+indexterm:[device data, GUDID]
+indexterm:[device data, IVD device]
+The process begins by acquiring preliminary information from a
+performing laboratory.
+For example,
+in the pilot with the partner laboratory,
+the team requested the test kit name,
+model number,
+and, when possible,
+the Primary Device Identifier (DI) for each IVD device.
+Primary DI is the most reliable way to identify an IVD device
+in the GUDID because it points to one specific IVD device.
+Without it,
+the GUDID may be searched by test kit name or model number,
+though several IVD devices may need to be reviewed to identify
+the IVD device of interest.

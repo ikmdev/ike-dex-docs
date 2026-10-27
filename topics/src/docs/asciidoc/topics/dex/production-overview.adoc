@@ -1,0 +1,34 @@
+// dex-production-overview
+// Topic: Overview of DeX Production
+// Type: concept
+// Status: draft
+:topic-id: dex-production-overview
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: pilot, CLIA, IVD devices, Komet, v2 model, manual effort
+:topic-summary: Describes the DeX pilot that modeled 20 in vitro diagnostic devices from a CLIA- \
+  certified laboratory in Komet, the challenges it exposed in data gathering and \
+  authoring, and the move toward an extensible version two model.
+
+[[dex-production-overview]]
+= Overview of DeX Production
+
+indexterm:[device data, IVD device]
+indexterm:[knowledge exchange, Komet]
+indexterm:[knowledge exchange, DeX v2 model]
+indexterm:[organizations, CLIA]
+The DeX pilot selected 20 in vitro diagnostics (IVDs) devices
+from device information provided from a partnered,
+high-complexity Clinical Laboratory Improvement Amendments
+(CLIA)-certified laboratory.
+Specific performance attributes were selected and collected for
+each IVD device and modeled in Komet,
+an IKE tool that supports authoring DeX records.
+The pilot demonstrated a baseline process for authoring an
+initial set of DeX records;
+however, as more complex laboratory IVD devices were investigated,
+the pilot exposed challenges described in the data gathering
+and authoring processes.
+The team aims to improve these processes as we move towards an
+extensible version two (v2) DeX model with the goal of reducing
+manual effort and improving consistency across records.

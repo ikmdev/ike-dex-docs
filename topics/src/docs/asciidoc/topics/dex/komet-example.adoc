@@ -1,0 +1,28 @@
+// dex-komet-example
+// Topic: Example: Komet Data Model for Authoring Albumin IVD Device DeX Record
+// Type: reference
+// Status: draft
+:topic-id: dex-komet-example
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: figure, Device Concept, Semantics, albumin, v1 specification
+:topic-summary: Presents the DeX v1 model populated for the Roche Diagnostics COBAS Integra Albumin \
+  Gen.2 device, showing the Device Concept with its Description, Identifier, Stated \
+  Definition, Test Performed, Device Company, Allowed Results, Indication and Reference \
+  Range Semantics.
+:topic-related: dex-albumin-example
+
+[[dex-komet-example]]
+= Example: Komet Data Model for Authoring Albumin IVD Device DeX Record
+
+indexterm:[knowledge exchange, DeX v1 model]
+indexterm:[knowledge exchange, Concept]
+indexterm:[knowledge exchange, Semantic]
+Figure 1 illustrates the DeX model according to v1
+specifications,
+populated with the data elements identified,
+gathered, and validated across sources for the Roche Diagnostics COBAS
+Integra Albumin Gen.2.
+
+.Albumin IVD Device Data Modeled in Komet for DeX v1
+image::dex/komet-albumin-dex-v1-model.png["Diagram of the DeX v1 model for the Roche Diagnostics COBAS Integra Albumin Gen.2 device: a Device Concept linked to Description, Identifier, Stated Definition, Test Performed on Specimen, Device Company, Allowed Results, Indication for Use and Population Reference Range Semantics, with a colour legend for GUDID, LOINC, SNOMED, Tinkar starter data and new DeX components",scaledwidth=90%]

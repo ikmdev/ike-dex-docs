@@ -1,0 +1,125 @@
+= Current-State DeX Production Workflow Overview
+:author: Deloitte Team – FA3-D1
+:revdate: October 28, 2026
+:doctype: book
+:toc: left
+ifdef::ike-pdf-renderer[]
+ifeval::["{ike-pdf-renderer}" != "html5"]
+:toc-placement: macro
+endif::[]
+endif::[]
+:toclevels: 2
+:icons: font
+:source-highlighter: rouge
+:topics: {generated}/topics-asciidoc
+:imagesdir: images
+
+// Reconstruction of the source report from the dex-* topics.
+// Cover page and table of contents live only in this file (not in the topic library).
+// The source document is unnumbered, so :sectnums: is deliberately not set.
+// Print builds (ike-pdf-renderer is set by ike-parent: html5 for HTML, else the PDF renderer) place the table of contents where toc::[]
+// appears, after the disclaimers as in the source; ike-parent's Prince build forces toc=auto, which
+// would otherwise put it ahead of all content. HTML keeps the left sidebar (toc::[] is ignored there).
+// Each topic is included at an offset equal to its depth in the source:
+// +1 chapter, +2 section, +3 subsection.
+
+// ============================================================
+// Cover page
+// ============================================================
+
+++++
+<style>
+/* Print only (Prince): the screen HTML keeps its normal layout.
+   ike-parent's print layout (ike-print.css) puts the generated title alone on page 1 and the
+   body after it, with blank pages for double-sided printing. Three of its rules cause that:
+   - #content { counter-reset: page 1 }: Prince starts a new page at any page-counter reset,
+     so everything after the title page begins on page 2.
+   - #header { page-break-after: always; padding-top: 30% }: the title gets a page to itself.
+   - body.book #preamble { page-break-before: always } (asciidoctor's own print rules).
+   - .book h2 / body.book .sect1>h2 { page-break-before: always }: every chapter-level topic
+     starts a new page. Overridden below so chapters continue on the current page; the disclaimers
+     keep a page of their own and the body still starts on a fresh page after the contents list.
+   Here the title and the cover share page 1, the disclaimers take page 2 and the table of
+   contents falls on page 3 (a recto), so there are no blank pages. Page numbering restarts
+   at the first chapter instead of at #content. */
+@media print {
+  html body.book #content { counter-reset: none !important; }
+  html body.book #preamble + .sect1 { counter-reset: page 1; }
+  html body.book #header { padding-top: 0 !important; page-break-after: auto !important; page: auto !important; }
+  html body.book #header > h1:first-child { font-size: 26pt !important; }
+  html body.book #header .details { margin-top: 1em !important; }
+  html body.book #preamble { page-break-before: auto !important; }
+  html body.book .sect1 > h2 { page-break-before: auto !important; }
+  html body.book .sect1 > h2#dex-disclaimers { page-break-before: always !important; }
+  .cover-page { margin-top: 1.5em; }
+  .cover-page .imageblock { margin: 0 0 1em 0; }
+  .cover-page .imageblock img { margin-left: auto !important; margin-right: auto !important; }
+  .cover-page .imageblock:first-child img { width: 4.4in !important; }
+  .cover-page .tableblock { font-family: 'Noto Sans', sans-serif; font-size: 9pt; }
+}
+</style>
+++++
+
+[.cover-page]
+--
+image::cover-hero.png[Stethoscope resting on a clipboard in front of a laptop,role=cover]
+
+image::fda-logo.png[FDA logo,role=cover,width=60]
+
+[cols="1,1",frame=none,grid=none]
+|===
+a|*PRESENTED BY:* +
+Deloitte Consulting LLP +
+1919 North Lynn St. +
+Arlington, VA 22209
+a|*PRESENTED TO:* +
+Dr. Keith Campbell and CAPT Willie Tompkins +
+*Contract #: 75F40122A00018*
+|===
+--
+
+// Topic images are resolved from the unpacked topic library.
+:imagesdir: {topics}/images
+
+// ============================================================
+// Front matter
+// ============================================================
+
+include::{topics}/topics/dex/disclaimers.adoc[leveloffset=+1]
+
+toc::[]
+
+// ============================================================
+// Body
+// ============================================================
+
+include::{topics}/topics/dex/background.adoc[leveloffset=+1]
+
+include::{topics}/topics/dex/purpose.adoc[leveloffset=+1]
+
+include::{topics}/topics/dex/production-overview.adoc[leveloffset=+1]
+
+include::{topics}/topics/dex/data-collection.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/identify-device.adoc[leveloffset=+3]
+
+include::{topics}/topics/dex/search-sources.adoc[leveloffset=+3]
+
+include::{topics}/topics/dex/validate-elements.adoc[leveloffset=+3]
+
+include::{topics}/topics/dex/albumin-example.adoc[leveloffset=+3]
+
+include::{topics}/topics/dex/komet-authoring.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/komet-example.adoc[leveloffset=+3]
+
+include::{topics}/topics/dex/manual-effort.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/conclusion.adoc[leveloffset=+1]
+
+include::{topics}/topics/dex/references.adoc[leveloffset=+1]
+
+// Index omitted — fewer than 30 topics.
+// Uncomment if the guide grows:
+// [index]
+// == Index

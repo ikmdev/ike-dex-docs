@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DeX Production Workflow — Reconstruction Assembly
+  ═════════════════════════════════════════════════
+  Reassembles "Current-State DeX Production Workflow Overview" (Deloitte
+  Team FA3-D1) from the dex-* topics. The cover page and table of contents
+  exist only in this assembly.
+
+  Build:
+    mvn clean verify -pl assemblies/FA3-D1_Current-State_DeX_Production_Workflow_Overview -am
+-->
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0
+         http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>dev.ikm.dex.docs</groupId>
+        <artifactId>assemblies</artifactId>
+    </parent>
+
+    <artifactId>FA3-D1_Current-State_DeX_Production_Workflow_Overview</artifactId>
+    <packaging>pom</packaging>
+
+    <name>FA3-D1_Current-State_DeX_Production_Workflow_Overview</name>
+    <description>
+        Reconstruction of the Current-State DeX Production Workflow Overview report.
+    </description>
+
+    <properties>
+        <pdf.source.document>FA3-D1_Current-State_DeX_Production_Workflow_Overview</pdf.source.document>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>topics</artifactId>
+            <version>${project.version}</version>
+            <classifier>adoc</classifier>
+            <type>zip</type>
+        </dependency>
+    </dependencies>
+
+</project>

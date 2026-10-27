@@ -31,8 +31,15 @@
     <name>Assemblies</name>
     <description>Aggregator for every assembly module.</description>
 
+    <properties>
+        <!-- Self-contained HTML (data-uri) is the portable HTML deliverable: the multi-page
+             HTML links topic images by absolute path into target/. Rendered only for assemblies. -->
+        <ike.skip.html-single>false</ike.skip.html-single>
+    </properties>
+
     <subprojects>
         <subproject>compendium</subproject>
+        <subproject>FA3-D1_Current-State_DeX_Production_Workflow_Overview</subproject>
     </subprojects>
 
 </project>

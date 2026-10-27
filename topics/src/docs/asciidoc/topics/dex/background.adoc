@@ -1,0 +1,73 @@
+// dex-background
+// Topic: Background
+// Type: concept
+// Status: draft
+:topic-id: dex-background
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: real-world data, RWD, traceability gap, laboratory devices, GUDID, 510(k), package insert
+:topic-summary: Explains how real-world data loses quality and traceability downstream for laboratory \
+  devices, and positions IKE and DeX as a shared, machine-readable source of device \
+  metadata linked to LOINC, SNOMED CT and GUDID identifiers.
+
+[[dex-background]]
+= Background
+
+indexterm:[device data, GUDID]
+indexterm:[device data, 510(k) premarket submission]
+indexterm:[device data, package insert]
+indexterm:[data quality, real-world data]
+indexterm:[data quality, traceability]
+Regulatory decisions and post-market safety monitoring
+increasingly depend on real-world data (RWD),
+but data that is accurate at its source often loses quality and
+traceability as it moves downstream (Luu et al.,
+2024). For laboratory devices,
+key information such as identifiers,
+interpretation guidance,
+and performance limits are scattered across manuals,
+databases,
+and site-specific setups.
+Because there is no shared source of truth for how device
+outputs should be encoded,
+results may not be comparable across sites,
+drift may go undetected,
+and performance monitoring at scale becomes difficult.
+Device information lives across Global Unique Device
+Identification Database (GUDID),
+FDA premarket submission documentation (510(k)),
+and package inserts,
+and no single,
+usable method currently brings these sources together into one view.
+
+indexterm:[knowledge exchange, IKE]
+indexterm:[knowledge exchange, DeX]
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+Integrated Knowledge Exchange (IKE) is an approach to data and
+knowledge management that aims to maintain the meaning,
+integrity,
+and quality of data as it travels within and between healthcare systems.
+IKE includes both a methodology and an accompanying ecosystem
+of tools that manage disparate standards through a common,
+centralized,
+and repeatable representation of data.
+Device Extensions (DeX) is one such tool,
+designed to close this traceability gap for laboratory devices.
+It is a knowledge repository of structured device metadata,
+such as units of measure,
+specimen type(s),
+and reference range(s),
+linked to laboratory terminologies including Logical
+Observation Identifiers Names and Codes (LOINC®) and Systemized
+Nomenclature of Medicine-Clinical Terms (SNOMED-CT®),
+and to device identifiers in the GUDID.
+DeX captures this information in a machine-readable format and
+establishes a line of traceability from the device to its data.
+That traceability supports comparability across sites and
+provides a stronger,
+clearer foundation for analytical and clinical decision support.
+More broadly,
+DeX offers a repeatable,
+evidence-based framework for maintaining and scaling knowledge
+about FDA-regulated products through automation and digital enablement.

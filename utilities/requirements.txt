@@ -1,5 +1,5 @@
 # Runtime dependencies for the scripts in this directory.
-# Pandoc itself is a system binary (brew install pandoc), not a pip package.
+# Pandoc itself is a system binary (https://pandoc.org/installing.html), not a pip package.
 
 # document_to_asciidoc.py
 docling>=2

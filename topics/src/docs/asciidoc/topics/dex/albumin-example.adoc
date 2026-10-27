@@ -1,0 +1,82 @@
+// dex-albumin-example
+// Topic: Example: DeX Data Elements for Albumin IVD Device
+// Type: reference
+// Status: draft
+:topic-id: dex-albumin-example
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: Roche, COBAS Integra, albumin, DeX attributes, data elements, reference range
+:topic-summary: Tabulates the data elements identified, gathered and validated for the Roche Diagnostics \
+  COBAS Integra Albumin Gen.2 IVD device, giving each DeX attribute, its source (GUDID, \
+  510(k), LOINC or SNOMED CT) and the resulting DeX record value.
+:topic-related: dex-komet-example
+
+[[dex-albumin-example]]
+= Example: DeX Data Elements for Albumin IVD Device
+
+indexterm:[device data, DeX record]
+indexterm:[device data, IVD device]
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+Table 1 illustrates the data elements identified,
+gathered, and validated across sources for the Roche Diagnostics COBAS
+Integra Albumin Gen.2.
+
+.Collected DeX Data Elements for Albumin IVD Device
+[cols="25h,15,60",options="header"]
+|===
+|DeX Attribute |Source |DeX Record
+|Device Name |510k |Roche Diagnostics COBAS Integra Albumin Gen.2
+
+|Brand Name |GUDID |Albumin Gen2
+
+|Version or Model |GUDID |5166861190
+
+|Company Name |GUDID |Roche Diagnostics GmbH
+
+|Primary DI Number |GUDID |4015630924820
+
+|GMDN Term Code |GUDID |59071
+
+|GMDN Term Name |GUDID |Albumin IVD, kit, spectrophotometry
+
+|FDA Product Code |GUDID/510k |CIX
+
+|FDA Product Code Name |GUDID/510k |BROMCRESOL GREEN DYE-BINDING,
+ALBUMIN
+
+|FDA Premarket Submission Number |GUDID/510k |K033009
+
+|Applicable Population* |510k |Patients requiring aid in the
+diagnosis and treatment of numerous diseases involving primarily the
+liver or kidneys
+
+|Analyte |510k |Albumin
+
+|Target |510k |Albumin
+
+|Specimen Type |510k |Human Serum or Plasma
+
+|Detection Limit |510k |2 g/L
+
+|Reference Range |510k |Adults: 35-52 g/L (532-790 μmol/L, 3.5-5.2
+g/dL); Newborn (0-4 days): 28-44 g/L; Children (4 days-14 years): 38-54
+g/L; Children (14-18 years): 32-45 g/L
+
+|Units of Measure |510k |g/L
+
+|Instrument |510k |cobas 8000 c702
+
+|Instrument DI |510k/GUDID |4015630930845
+
+|Test Performed LOINC® Code |LOINC® |61151-7
+
+|Test Performed LOINC® Long Name |LOINC® |Albumin [Mass/volume]
+in Serum or Plasma by Bromocresol green (BCG) dye binding method
+
+|Specimen Type SNOMED-CT® Code |SNOMED CT® |Serum specimen (specimen): 119364003 +
+Plasma specimen (specimen): 119361006
+
+|Result Description SNOMED-CT® Code |SNOMED CT® |Gram/liter (qualifier
+value) SCTID: 258794004
+|===

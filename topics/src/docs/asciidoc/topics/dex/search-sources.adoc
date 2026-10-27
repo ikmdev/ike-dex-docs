@@ -1,0 +1,89 @@
+// dex-search-sources
+// Topic: Searching Through Available Data Sources
+// Type: concept
+// Status: draft
+:topic-id: dex-search-sources
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: GUDID, 510(k), package insert, GMDN, FDA product code, decision summary, LOINC, SNOMED CT
+:topic-summary: Details the three sources of IVD device information (GUDID, the FDA 510(k) premarket \
+  submission and the manufacturer package insert), the gaps among them, and the manual \
+  mapping to LOINC analyte codes and SNOMED CT specimen codes, including multi-analyte \
+  panels.
+
+[[dex-search-sources]]
+= Searching Through Available Data Sources
+
+indexterm:[device data, GUDID]
+indexterm:[device data, 510(k) premarket submission]
+indexterm:[device data, package insert]
+indexterm:[device data, GMDN]
+Once the IVD device is identified in GUDID,
+the team collects information from three sources:
+GUDID, the FDA Premarket Submission documentation (510(k)),
+and the manufacturer’s package insert or instructions for use.
+GUDID provides the brand name,
+version or model,
+company name,
+Primary DI,
+Global Medical Device Nomenclature (GMDN) term code and name,
+FDA product code and name,
+and the FDA Premarket Submission Number (the 510(k) number).
+The 510(k) number then leads to the 510(k) entry in the FDA
+510(k) database,
+where the Summary or Decision Summary describes the applicable population,
+analyte(s),
+target(s),
+specimen type(s),
+detection limit(s),
+reference range(s),
+instrument(s) approved for use,
+and associated device(s) (e.g.,
+reagents, calibrators,
+and/or controls) if applicable.
+
+indexterm:[device data, decision summary]
+No single source is complete.
+For example,
+the 510(k) number is not always listed in GUDID,
+so it may need to be identified through a broader search across
+FDA’s publicly available databases.
+Similarly,
+some 510(k) entries,
+particularly those published before decision summaries were standardized,
+do not have decision summaries that indicate IVD device
+performance characteristics.
+Where decision summaries exist,
+not all of them include the required information.
+In those cases,
+the package inserts or instructions for use are the recommended
+sources for supplemental detail.
+Additionally,
+IVD device decision summaries and/or package inserts that
+include approved instruments for use and associated devices do
+not regularly list their DI numbers.
+Without those DI numbers,
+the team must review individual GUDID entries for relevance,
+since a single instrument family may have several entries for
+different configurations,
+software versions,
+or regional variants.
+
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+indexterm:[device data, multi-analyte panel]
+Finally, the team must identify appropriate LOINC® codes for each
+analyte and SNOMED-CT® codes for each specimen type result description.
+No source directly aligns these codes,
+so they are found through manual searches of the LOINC® and
+SNOMED-CT® databases.
+For single analyte and single specimen IVD devices,
+this process is straightforward because there is only one
+LOINC® code and one SNOMED-CT® code to collect.
+However, multi-analyte IVD devices,
+such as respiratory panels,
+are more complex because each test performed (e.g. Influenza A/B,
+SARS-CoV-2,
+Respiratory Syncytial Virus) requires its own LOINC® code,
+so the team must collect and validate multiple codes for a
+single IVD device.

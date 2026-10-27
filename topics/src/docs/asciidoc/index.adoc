@@ -7,17 +7,44 @@
 :source-highlighter: rouge
 :icons: font
 :author: IKE Network
+:imagesdir: images
 
 // All-topics preview for HTML authoring.
 // NOT used by assembly modules. Every topic must be included here so
 // cross-topic xref: links resolve in the topics module build.
 //
-// == Domain Heading
-//
-// include::topics/{domain}/{slug}.adoc[leveloffset=+1]
-
 [preface]
 == About This Library
 
-This topic library is empty.
-Topics are added by ingesting converted source documents.
+This topic library holds topics decomposed from converted source documents.
+Each domain below corresponds to a topic directory and id prefix.
+
+== DeX Production Workflow (dex)
+
+include::topics/dex/disclaimers.adoc[leveloffset=+2]
+
+include::topics/dex/background.adoc[leveloffset=+2]
+
+include::topics/dex/purpose.adoc[leveloffset=+2]
+
+include::topics/dex/production-overview.adoc[leveloffset=+2]
+
+include::topics/dex/data-collection.adoc[leveloffset=+2]
+
+include::topics/dex/identify-device.adoc[leveloffset=+2]
+
+include::topics/dex/search-sources.adoc[leveloffset=+2]
+
+include::topics/dex/validate-elements.adoc[leveloffset=+2]
+
+include::topics/dex/albumin-example.adoc[leveloffset=+2]
+
+include::topics/dex/komet-authoring.adoc[leveloffset=+2]
+
+include::topics/dex/komet-example.adoc[leveloffset=+2]
+
+include::topics/dex/manual-effort.adoc[leveloffset=+2]
+
+include::topics/dex/conclusion.adoc[leveloffset=+2]
+
+include::topics/dex/references.adoc[leveloffset=+2]

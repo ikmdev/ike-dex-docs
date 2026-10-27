@@ -1,0 +1,23 @@
+// dex-disclaimers
+// Topic: Disclaimers and notes
+// Type: concept
+// Status: draft
+:topic-id: dex-disclaimers
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: disclaimer, authorship, FDA views, policy
+:topic-summary: Declares that the deliverable reflects the views of its authors and should not be read \
+  as Food and Drug Administration positions or policy. Applies to every assembly that \
+  publishes the report.
+:topic-notes: Below the 500-character minimum. Kept as its own topic so the source document's heading \
+  structure survives reassembly; merging it would change the chapter list.
+
+[[dex-disclaimers]]
+= Disclaimers and notes
+
+indexterm:[organizations, FDA]
+indexterm:[disclaimer]
+indexterm:[authorship]
+This document reflects the views of the authors and should not
+be construed to represent the Food and Drug Administration’s
+(FDA’s) views or policies.

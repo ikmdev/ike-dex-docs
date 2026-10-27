@@ -4,8 +4,8 @@ target/
 # Build standards unpacked by `mvn validate` — build artifacts, never edit or commit
 .claude/
 
-# Per-module .asciidoctorconfig files are extracted by the build but committed on purpose,
-# so every developer's IDE resolves includes without a first build.
+# AsciiDoctor diagram cache. (Per-module .asciidoctorconfig files are extracted by the build
+# but are committed on purpose, so every developer's IDE resolves includes.)
 .asciidoctor/
 
 # Maven release and tooling leftovers
@@ -32,7 +32,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Scratch output from document conversion
+# Scratch space for document conversion and reference renders (work/raw, work/ref)
 work/
 
 # IDE

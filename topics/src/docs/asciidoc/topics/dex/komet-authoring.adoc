@@ -1,0 +1,93 @@
+// dex-komet-authoring
+// Topic: Current State of DeX Record Authoring in Komet
+// Type: concept
+// Status: draft
+:topic-id: dex-komet-authoring
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: logical data model, Concept, Pattern, Semantic, SOLOR, STAMP, manual entry
+:topic-summary: Describes how Komet represents DeX records through the IKE logical data model of \
+  Concepts, Patterns and Semantics versioned with STAMP, how authoring starts from a GUDID \
+  device Concept in SOLOR, and why fields without structured sources depend on manual \
+  interpretation.
+
+[[dex-komet-authoring]]
+= Current State of DeX Record Authoring in Komet
+
+indexterm:[knowledge exchange, Concept]
+indexterm:[knowledge exchange, Pattern]
+indexterm:[knowledge exchange, Semantic]
+indexterm:[coordinates, STAMP coordinate]
+The IKE logical data model represents information from the data
+collection process in a machine-readable format,
+using Concepts,
+Patterns, and Semantics.
+A Concept is a specific,
+well-defined idea or entity that corresponds to a piece of information.
+In Figure 1,
+the Concept is the IVD device itself,
+Roche Diagnostics COBAS Integra Albumin Gen.2. A Pattern is a
+reusable template for a particular kind of information,
+such as the test performed on the IVD device.
+A populated instance of a Pattern is called a Semantic.
+Semantics contain the information specified within the fields
+of the Pattern for a selected Reference Component,
+which can be a Concept,
+Pattern, or Semantic within the knowledge base.
+Knowledge organized according to this model and versioned via Status,
+Time, Author,
+Module, and Path (STAMP) tracking is harmonized across disparate native formats.
+
+indexterm:[knowledge exchange, SOLOR]
+indexterm:[knowledge exchange, Komet]
+indexterm:[classification, classifier]
+The DeX model in Komet builds on the IKE data model and
+references existing Concepts from SNOMED-CT®,
+LOINC®, and FDA’s GUDID.
+Authoring occurs in SOLOR,
+an IKE-aligned knowledge base containing SNOMED-CT®,
+LOINC®, and RxNorm sources,
+and begins with an IVD device Concept from GUDID.
+For example,
+the Roche Diagnostics COBAS Integra Albumin Gen.2 device exists
+in a local SOLOR-GUDID dataset (SOLOR with GUDID added),
+where it has a fully qualified name and a logical definition
+imported and transformed directly from GUDID.
+Komet then classifies this Concept to infer its relationships
+to other Concepts in the dataset.
+
+indexterm:[knowledge exchange, DeX starter data]
+Patterns and Semantics then attach the remaining information
+about the IVD device.
+For example,
+once the Device Company Pattern is created and published,
+a Semantic referencing the Roche IVD device denotes its labeler,
+Roche Diagnostics GmbH.
+The other Patterns,
+which cover tests performed,
+reference limits,
+and performance characteristics,
+follow the same steps.
+These Patterns are supplied as part of the DeX starter data,
+which serves as the baseline for all other DeX-related data.
+
+indexterm:[workflow, record authoring]
+How a Semantic’s fields are populated depends on their source.
+Fields drawn from existing sources,
+such as GUDID,
+LOINC®, and SNOMED-CT®,
+can be populated from data that is already structured.
+However, fields that represent new DeX components have no such source.
+Their values come from FDA 510(k) documents and manufacturer
+package inserts,
+and each value must be located,
+interpreted,
+and entered by hand as defined by the data collection and
+validation process above.
+Because a single record requires many Semantics across many Patterns,
+each depends on an author’s reading of unstructured documents,
+and because different authors can reasonably interpret the same
+document differently,
+consistent production is limited.
+Reducing this dependence on manual interpretation is a central
+goal of the current phase of work.

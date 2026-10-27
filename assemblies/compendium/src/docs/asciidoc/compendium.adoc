@@ -8,6 +8,7 @@
 :icons: font
 :author: IKE Network
 :topics: {generated}/topics-asciidoc
+:imagesdir: {topics}/images
 
 // Master assembly: every published topic must appear here.
 // Topic includes under a == chapter use leveloffset=+2.
@@ -21,3 +22,44 @@
 
 This compendium contains the complete set of topics in the library, organized by domain.
 It is a validation target and reference, not a linear read.
+
+// ============================================================
+// DeX Production Workflow
+// ============================================================
+
+== DeX Production Workflow
+
+include::{topics}/topics/dex/disclaimers.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/background.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/purpose.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/production-overview.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/data-collection.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/identify-device.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/search-sources.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/validate-elements.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/albumin-example.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/komet-authoring.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/komet-example.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/manual-effort.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/conclusion.adoc[leveloffset=+2]
+
+include::{topics}/topics/dex/references.adoc[leveloffset=+2]
+
+// ============================================================
+// Index (generated from indexterm macros in topic fragments)
+// ============================================================
+
+[index]
+== Index

@@ -1,0 +1,83 @@
+// dex-manual-effort
+// Topic: Addressing Manual Effort and Variability
+// Type: concept
+// Status: draft
+:topic-id: dex-manual-effort
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: v2 model, automation, AI-assisted, LLM, AsciiDoc repository, source documentation
+:topic-summary: Sets out four needs (complete source documentation, automation, a fuller v2 model and \
+  structured SME validation) and the planned AsciiDoc source repository, AI-assisted \
+  conversion and extraction, and programmatic DeX creation pipeline that builds Concepts \
+  and Semantics in Komet.
+
+[[dex-manual-effort]]
+= Addressing Manual Effort and Variability
+
+indexterm:[data quality, variability]
+indexterm:[knowledge exchange, DeX v2 model]
+These challenges across data gathering,
+validation,
+and record authoring indicate four needs:
+complete and accessible source documentation,
+automation that reduces manual effort,
+a more fully specified v2 model,
+and structured SME validation.
+
+indexterm:[automation, AI-assisted conversion]
+indexterm:[workflow, SME validation]
+The v2 work begins with IVD devices for which the most data is available,
+such as those with a GUDID record containing a linked 510(k) number,
+a 510(k) entry with a standardized decision summary,
+and an accessible package insert for additional device details.
+Selecting these IVD devices first avoids discovering gaps
+during data collection that would otherwise require additional
+searching for IVD device information.
+The team is designing a repository of GUDID,
+510(k), and package insert documents for these devices in AsciiDoc format,
+built through an AI-assisted pipeline that converts each source document.
+The repository is intended to enable AI- and large language
+model (LLM)-assisted tools to identify and extract specific
+data elements from source documentation,
+reducing both the effort and the variability of searching
+disparate sources and manually extracting information for each DeX record.
+
+SME validation continues throughout this process,
+but in a more structured and less manual form.
+The SME first validates IVD device source documentation before
+it is converted to AsciiDoc,
+then reviews the information extracted from those files in a
+single location rather than across multiple sources,
+and finally edits the extracted information as needed to
+complete the record.
+Because AI-assisted tools perform the conversion and extraction,
+human validation is retained at each of these stages,
+so that errors introduced by the tools are identified before
+they reach a record.
+Early detection of these errors reduces the risk of inaccurate
+records entering Komet.
+
+indexterm:[automation, DeX creation pipeline]
+To address manual effort during authoring,
+the team plans to develop a DeX creation pipeline that
+programmatically creates Concepts and Semantics in Komet
+according to the v2 model.
+Automation reduces the potential for human error in manual entry,
+such as misspelling an IVD device name or misinterpreting a Semantic.
+It also reduces variability by relying on code to create data
+deterministically,
+which limits the possibility that human authors will
+misinterpret the model or enter the same information differently.
+The v2 model will add more granular data elements to support
+extensibility across all IVD device types,
+such as Patterns for limit metrics that can be applied to an
+IVD device as needed.
+These elements allow the pipeline to fit records into the model
+and scale to new IVD device types without manual interpretation
+of which Patterns or Semantics apply.
+
+Through this combination of automation and structured validation,
+the v2 model aims to scale DeX across a breadth of IVD device categories,
+as well as extending beyond IVD devices,
+while reducing manual effort at each step and improving
+consistency of data representation.

@@ -1,0 +1,26 @@
+// dex-purpose
+// Topic: Purpose
+// Type: concept
+// Status: draft
+:topic-id: dex-purpose
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: current state, baseline, manual effort, variability, scaling
+:topic-summary: States that the deliverable describes how DeX artifacts are researched, authored and \
+  validated today, emphasizing manual effort and sources of variability, and that it sets \
+  a baseline for improving efficiency and scaling DeX production.
+:topic-notes: Below the 500-character minimum. Kept as its own topic so the source document's heading \
+  structure survives reassembly; merging it would change the chapter list.
+
+[[dex-purpose]]
+= Purpose
+
+indexterm:[workflow, data collection]
+indexterm:[workflow, record authoring]
+indexterm:[workflow, SME validation]
+The purpose of this deliverable is to describe the current
+state of how DeX artifacts are researched,
+authored, and validated,
+with attention to manual effort and sources of variability.
+This report also provides a baseline for improving efficiency
+across each process for future scaling of DeX artifacts.

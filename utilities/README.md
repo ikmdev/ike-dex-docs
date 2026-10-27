@@ -5,8 +5,10 @@ Python helpers for the ingestion workflow. One shared virtual environment
 
 ## Setup
 
+Install [Pandoc](https://pandoc.org/installing.html), a system dependency of
+`document_to_asciidoc.py` that must be on your `PATH`, then create the environment:
+
 ```bash
-brew install pandoc          # system dependency of document_to_asciidoc.py
 ./utilities/setup.sh         # creates .venv and installs requirements.txt
 ```
 
@@ -25,11 +27,25 @@ of the working environment. Regenerate it after changing dependencies:
 | `document_to_asciidoc.py` | Convert a `.pdf` or `.docx` to AsciiDoc (Docling, then Pandoc). Writes pictures to an `images/` directory, drops the source's table of contents, and normalizes headings. |
 
 ```bash
-utilities/.venv/bin/python utilities/document_to_asciidoc.py input.docx -o work/input.adoc
+utilities/.venv/bin/python utilities/document_to_asciidoc.py input.docx -o work/raw/input.adoc
 ```
 
+`work/` is git-ignored scratch space; pictures go to `work/raw/images/`.
 The output is raw conversion only. Continue with `semantic-linebreak` and
 decomposition as described in the repository README.
+
+### Known limitations
+
+Always review the output against the source (render the original with `soffice --headless
+--convert-to pdf` to compare):
+
+- Vector shapes, text boxes and positioned cover art in Word are flattened. Docling may emit a
+  picture of a banner with its text baked in alongside the same text as ordinary paragraphs;
+  keep one and drop the other.
+- `.emf`/`.wmf` pictures cannot be read by Pillow and are skipped with a warning.
+- Table captions and "Figure n." lines come through as plain paragraphs; convert them to
+  `.Title` block titles. Cells with several paragraphs may merge into one line.
+- A source table of contents is removed and replaced by `:toc:`; running headers and footers are lost.
 
 ## Adding a utility
 

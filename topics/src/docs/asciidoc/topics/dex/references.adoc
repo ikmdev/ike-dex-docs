@@ -1,0 +1,36 @@
+// dex-references
+// Topic: References
+// Type: reference
+// Status: draft
+:topic-id: dex-references
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: Luu, JAMIA Open, citation, health information exchange
+:topic-summary: Lists the single cited source, Luu et al. (2024) in JAMIA Open, a case report analyzing \
+  laboratory data transmission between two healthcare institutions over a point-to-point \
+  health information exchange platform.
+
+[[dex-references]]
+= References
+
+indexterm:[data quality, real-world data]
+indexterm:[interoperability, health information exchange]
+indexterm:[data quality, traceability]
+Luu, H. S.,
+Campbell, W. S.,
+Cholan, R. A.,
+Edgerton, M. E.,
+Englund, A.,
+Keller, A.,
+Korte, E. D,
+Mitchell, S. H.,
+Watkins, G. T.,
+Westervelt,
+L., Wyman,
+D., & Powell,
+S. (2024).
+Analysis of laboratory data transmission between two healthcare
+institutions using a widely used point-to-point health
+information exchange platform:
+A case report. _JAMIA Open_,
+_7_(2). https://doi.org/10.1093/jamiaopen/ooae032

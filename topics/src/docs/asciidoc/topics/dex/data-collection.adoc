@@ -1,0 +1,24 @@
+// dex-data-collection
+// Topic: Current State of DeX Data Collection & Research
+// Type: concept
+// Status: draft
+:topic-id: dex-data-collection
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: manual parsing, disparate sources, SME, three activities
+:topic-summary: Introduces the three activities that make up DeX data collection, namely identifying the \
+  IVD device and associated devices, pulling information from available sources and \
+  validating with a subject matter expert, as a manual process across disparate sources.
+
+[[dex-data-collection]]
+= Current State of DeX Data Collection & Research
+
+indexterm:[workflow, data collection]
+indexterm:[workflow, SME validation]
+indexterm:[device data, IVD device]
+Gathering data for a DeX record currently depends on manual
+parsing across disparate sources of IVD device information.
+The process is described by three main activities:
+identifying the IVD device and associated devices,
+pulling information from available data sources,
+and validating with a subject matter expert (SME).

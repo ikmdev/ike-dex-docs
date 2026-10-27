@@ -1,0 +1,33 @@
+// dex-conclusion
+// Topic: Conclusion
+// Type: concept
+// Status: draft
+:topic-id: dex-conclusion
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: traceability gap, manual parsing, AI, LLM, pipeline, consistency
+:topic-summary: Summarizes the data quality and traceability gap in laboratory device data, the \
+  dependence of DeX records on manual parsing and interpretation, and the planned AI- and \
+  LLM-assisted collection and programmed authoring meant to reduce manual effort and \
+  variability.
+
+[[dex-conclusion]]
+= Conclusion
+
+indexterm:[data quality, traceability]
+indexterm:[automation, AI-assisted conversion]
+indexterm:[automation, DeX creation pipeline]
+DeX aims to close a data quality and traceability gap in
+laboratory device data,
+where identifiers,
+interpretation guidance,
+and performance limits are scattered across GUDID,
+510(k) summaries,
+package inserts,
+and site-specific setups.
+Building a DeX record today depends on manual parsing across these sources,
+and authoring relies on manual interpretation of source
+documentation into IKE’s logical model.
+With a new approach to data collection using AI- and LLM-
+assisted tools and authoring DeX records through a programmed pipeline,
+the team aims to reduce manual effort and variability across records.
