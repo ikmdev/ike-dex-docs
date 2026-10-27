@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Assemblies — Intermediate Aggregator
+  ════════════════════════════════════
+  Parent of every assembly module. The root POM lists only this module, so the
+  root never changes when an assembly is added.
+
+  MAINTENANCE: every ingest that creates an assembly adds a <subproject> entry
+  below (the directory name under assemblies/). Keep `compendium` first.
+  Assembly-specific plugin configuration, if any is ever needed, goes in this
+  POM's <build><pluginManagement> so all assemblies inherit it.
+
+  Build:
+    mvn clean verify -pl assemblies -am                    # every assembly + topics
+    mvn clean verify -pl assemblies/compendium -am         # one assembly + topics
+-->
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0
+         http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>dev.ikm.dex.docs</groupId>
+        <artifactId>ike-dex-docs</artifactId>
+    </parent>
+
+    <artifactId>assemblies</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Assemblies</name>
+    <description>Aggregator for every assembly module.</description>
+
+    <subprojects>
+        <subproject>compendium</subproject>
+    </subprojects>
+
+</project>

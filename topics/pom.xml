@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Topics — Topic Library
+  ══════════════════════
+  Reusable AsciiDoc topic fragments. Publishes the `adoc` classifier ZIP
+  consumed by the assembly modules; it does not render PDF itself.
+
+  Build:
+    mvn clean verify -pl topics -am     # HTML preview of index.adoc
+    mvn -B idoc:topic-registry -pl topics   # generate target/topic-registry.yaml
+-->
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0
+         http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>dev.ikm.dex.docs</groupId>
+        <artifactId>ike-dex-docs</artifactId>
+    </parent>
+
+    <artifactId>topics</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Topics</name>
+    <description>
+        Topic library. Publishes an AsciiDoc source ZIP consumed by assembly modules.
+    </description>
+
+    <properties>
+        <ike.skip.prince>true</ike.skip.prince>
+        <ike.skip.html-single>true</ike.skip.html-single>
+        <ike.skip.pdf-default>true</ike.skip.pdf-default>
+    </properties>
+
+</project>

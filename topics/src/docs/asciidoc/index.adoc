@@ -1,0 +1,23 @@
+= Topic Library
+:doctype: book
+:toc: left
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 3
+:source-highlighter: rouge
+:icons: font
+:author: IKE Network
+
+// All-topics preview for HTML authoring.
+// NOT used by assembly modules. Every topic must be included here so
+// cross-topic xref: links resolve in the topics module build.
+//
+// == Domain Heading
+//
+// include::topics/{domain}/{slug}.adoc[leveloffset=+1]
+
+[preface]
+== About This Library
+
+This topic library is empty.
+Topics are added by ingesting converted source documents.

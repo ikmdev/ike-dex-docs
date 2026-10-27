@@ -1,0 +1,52 @@
+# Maven build output (includes the generated topic-registry.yaml and term-index.yaml)
+target/
+
+# Build standards unpacked by `mvn validate` — build artifacts, never edit or commit
+.claude/
+
+# Per-module .asciidoctorconfig files are extracted by the build but committed on purpose,
+# so every developer's IDE resolves includes without a first build.
+.asciidoctor/
+
+# Maven release and tooling leftovers
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.ike-backup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+.mvn/local-repo/
+.ike/vcs-state
+
+# ike:* goal reports
+ike꞉*.md
+
+# Python virtual environment and caches (utilities/)
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Scratch output from document conversion
+work/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Compendium — Validation Assembly
+  ════════════════════════════════
+  Includes every topic in the library. If a topic is not here it is orphaned.
+
+  Build:
+    mvn clean verify -pl assemblies/compendium -am
+-->
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0
+         http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>dev.ikm.dex.docs</groupId>
+        <artifactId>assemblies</artifactId>
+    </parent>
+
+    <artifactId>compendium</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Compendium</name>
+    <description>Master assembly containing every topic in the library.</description>
+
+    <properties>
+        <pdf.source.document>compendium</pdf.source.document>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>topics</artifactId>
+            <version>${project.version}</version>
+            <classifier>adoc</classifier>
+            <type>zip</type>
+        </dependency>
+    </dependencies>
+
+</project>

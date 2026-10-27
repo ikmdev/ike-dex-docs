@@ -1,0 +1,23 @@
+= Compendium
+:doctype: book
+:toc: left
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 3
+:source-highlighter: rouge
+:icons: font
+:author: IKE Network
+:topics: {generated}/topics-asciidoc
+
+// Master assembly: every published topic must appear here.
+// Topic includes under a == chapter use leveloffset=+2.
+//
+// == Domain Heading
+//
+// include::{topics}/topics/{domain}/{slug}.adoc[leveloffset=+2]
+
+[preface]
+== About This Document
+
+This compendium contains the complete set of topics in the library, organized by domain.
+It is a validation target and reference, not a linear read.

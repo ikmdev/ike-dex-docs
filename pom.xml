@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  IKE DeX Docs
+  ════════════
+  Documentation project: converted source documents are decomposed into a
+  topic library (topics/) and reassembled by assemblies (assemblies/*).
+
+  Layout:
+    topics/                    topic library (artifactId "topics" per IKE-INGEST)
+    assemblies/                aggregator; its pom.xml lists every assembly module
+    assemblies/compendium/     all-topics validation assembly
+    assemblies/{name}/         reconstruction and targeted-guide assemblies
+    utilities/                 Python helpers (not part of the Maven reactor)
+
+  Build:
+    mvn validate                                   # unpack build standards
+    mvn clean verify                               # HTML for every module
+    mvn clean verify -pl assemblies/compendium -am # one assembly + topics
+-->
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0
+         http://maven.apache.org/xsd/maven-4.1.0.xsd"
+         root="true">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>network.ike.platform</groupId>
+        <artifactId>ike-parent</artifactId>
+        <version>204</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>dev.ikm.dex.docs</groupId>
+    <artifactId>ike-dex-docs</artifactId>
+    <version>1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>IKE DeX Docs</name>
+    <description>
+        Topic library and assemblies built from converted source documents.
+    </description>
+    <inceptionYear>2026</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:https://github.com/ikmdev/ike-dex-docs.git</connection>
+        <developerConnection>scm:git:git@github.com:ikmdev/ike-dex-docs.git</developerConnection>
+        <url>https://github.com/ikmdev/ike-dex-docs</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <!-- Required by ike-parent's site-url enforcer (ike-issues#383): inheriting
+         projects must declare their own site URL. Placeholder; nothing deploys here yet. -->
+    <distributionManagement>
+        <site>
+            <id>ike-site</id>
+            <url>https://ike.network/${project.artifactId}/</url>
+        </site>
+    </distributionManagement>
+
+    <properties>
+        <!-- Documentation project, not a library: never publish to Maven Central. -->
+        <ike.publishToCentral>false</ike.publishToCentral>
+        <!-- ike-parent 204 skips every renderer by default. Render HTML; skip the Prince PDF
+             so a plain `mvn clean verify` needs no Prince install. Add PDFs on the command
+             line: -Dike.skip.prince=false -Dike.skip.pdf-default=false, or -Dike.pdf.prawn. -->
+        <ike.skip.html>false</ike.skip.html>
+    </properties>
+
+    <subprojects>
+        <subproject>topics</subproject>
+        <!-- assemblies/pom.xml lists the individual assembly modules; update it, not this file. -->
+        <subproject>assemblies</subproject>
+    </subprojects>
+
+</project>
