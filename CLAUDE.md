@@ -25,4 +25,6 @@ is not in the unpacked set; read it from `IKE-Network/ike-tooling`.
 - Authored sources need no provenance attributes. Third-party sources need the `IKE-INGEST`
   confirmation step first, and `ext/` topics must not be included in assemblies.
 - Don't `sed`/`awk`/regex-edit POMs. Don't commit or push unless asked.
+- Deploy snapshots with `mvn clean deploy`; release only with `ike:release-draft` / `ike:release-publish`
+  (see README), never by removing `-SNAPSHOT` by hand. Both push or publish externally: only when asked.
 - Python work uses `utilities/.venv` (`./utilities/setup.sh`); scratch output goes in `work/`.

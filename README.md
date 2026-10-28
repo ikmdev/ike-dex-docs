@@ -224,6 +224,54 @@ Copy that block for any assembly that needs a cover. Not working here (tested): 
 is ignored by `ike-parent` 204, `-Dike.skip.prawn=false` fails on a JRuby YAML error in
 asciidoctorj-pdf, and FOP fails on the topics preview.
 
+## Deploying to Nexus
+
+Repositories come from `ike-parent` (`ike-base-parent`), not from this project's POMs:
+
+| Version | Repository id | URL |
+| --- | --- | --- |
+| `-SNAPSHOT` | `ike-snapshots` | `https://nexus.tinkar.org/repository/ike-snapshots/` |
+| release | `ike-staging` | `https://nexus.tinkar.org/repository/ike-staging/` (promoted to `ike-releases` by TeamCity) |
+
+**Credentials.** Maven reads `<server>` entries from `~/.m2/settings.xml` by repository id, so add
+entries with ids `ike-snapshots` and `ike-staging`. A settings file with only `tinkar-nexus` and
+`central` servers will fail to authenticate on deploy. (Not tested against the live server.)
+
+**Snapshot deploy** (day-to-day; the project stays at `1-SNAPSHOT`):
+
+```bash
+mvn clean deploy                           # HTML only
+mvn clean deploy -Dike.skip.prince=false   # also publish the PDFs (needs prince)
+```
+
+Each module publishes its POM, a `-build.pom` and CycloneDX SBOMs under `dev.ikm.dex.docs`.
+Classifier zips: `adoc` (source, `topics` and each assembly), `html` (every module), `html-single`
+(assemblies) and, with Prince enabled, `prince` (the PDFs). The `-D` flag also reaches `topics`, so
+its `prince` zip holds a PDF per topic fragment; ignore it. Check what would be published without
+touching Nexus (the metadata check needs an `http(s)` repository, so skip it):
+
+```bash
+mvn clean deploy -Dike.metadata.heal.skip=true \
+  "-DaltDeploymentRepository=local::file:$PWD/target/deploy-test" \
+  "-DaltSnapshotDeploymentRepository=local::file:$PWD/target/deploy-test"
+```
+
+**Release.** Never delete `-SNAPSHOT` by hand and run `mvn deploy` (`IKE-MAVEN` prohibits it).
+Use the `ike` goals, which branch, set the version, build with `mvnw clean verify`, tag, deploy
+from the tag to `ike-staging`, bump to the next snapshot and publish:
+
+```bash
+mvn ike:release-draft     # preview only; changes nothing (1 -> tag v1 -> 2-SNAPSHOT)
+mvn ike:release-publish   # does it for real
+```
+
+`release-publish` also pushes the tag and `main` to `origin`, force-pushes a generated site to
+`gh-pages`, and creates a GitHub Release, so it needs push access and an authenticated `gh`. Read the
+draft first, and resolve the site target (below) before the first release. Releases build with this
+POM's defaults, so they contain no PDFs unless `ike.skip.prince` is set to `false` in the root POM.
+`IKE-COMMITS` expects an issue trailer (`Fixes:` / `Refs:`) on commits in the release range; the
+release warns about commits without one.
+
 ## Known issues and open decisions
 
 - **Third-party sources.** The standard forbids `ext/` topics in assemblies, and the example makes
@@ -237,6 +285,10 @@ asciidoctorj-pdf, and FOP fails on the topics preview.
   record authoring) and `automation` (AI-assisted conversion, DeX creation pipeline); new entries
   under existing categories: `organizations` (FDA, CLIA), `interoperability` (health information
   exchange).
+- **Release site target.** The release preview says it would publish the site at
+  `https://ike.network/ike-dex-docs/`, the placeholder in the root POM, and force-push `gh-pages`
+  on `origin`. Decide where this project's site should live, or whether to publish one, before
+  the first `ike:release-publish`.
 - **Two topics are under the 500-character minimum** (`dex-disclaimers`, `dex-purpose`), kept
   to preserve the source's chapter structure; see their `:topic-notes:`.
 - **Fragment format may change** (`ike-issues#1088`: anchor as id, no `:topic-id:` or comment
