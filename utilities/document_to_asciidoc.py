@@ -1,3 +1,29 @@
+# NOTE FOR AI ASSISTANTS (Claude and others) -- read before running this script on a PDF:
+#
+#   Ask the user whether to run the OCR step (--ocr, on by default; --no-ocr turns it off) before you
+#   convert, and give them this summary of the trade-off. Do not decide for them.
+#
+#   What it does: some PDFs hold a table as a picture, with no text underneath. With OCR on, the tagged
+#   engine finds the table's ruling lines, reads each cell with three OCR engines (RapidOCR, Tesseract,
+#   EasyOCR) and writes an AsciiDoc table. Without it the picture is kept as an image and flagged.
+#
+#   Pros:
+#     * the table becomes real, searchable AsciiDoc with column and row spans and header cells;
+#     * three engines vote and numbers are cross-checked (a percentage must match its fraction), so
+#       doubtful cells are listed for review instead of silently trusted;
+#     * it runs locally, with no document leaving the machine.
+#   Cons:
+#     * it needs the easyocr and tesserocr packages (utilities/requirements-ocr.txt, ~160 MB installed;
+#       setup.sh --no-ocr leaves them out), and the first run then downloads about 110 MB of models
+#       (Tesseract English data ~15 MB, EasyOCR ~93 MB); later runs are offline. --no-ocr downloads nothing;
+#     * it adds seconds per picture table on top of the conversion;
+#     * it only reads tables drawn with clear ruling lines, in English; bold and italic are not recovered;
+#     * OCR can still be wrong: every cell listed in the "// Check ..." comments must be compared with the
+#       picture, and check_fidelity.py cannot verify OCR text because the picture has no text layer.
+#
+#   If the user has no picture tables, or wants the pictures kept as they are, pass --no-ocr.
+#   OCR affects only the tagged and layout engines; the Docling engine does its own OCR.
+
 """Convert PDF or Word (.docx) documents to AsciiDoc.
 
 Format-agnostic: this module knows nothing about what the document contains.
@@ -14,7 +40,21 @@ Usage from the command line:
 
     python document_to_asciidoc.py input.pdf [-o output.adoc]
 
-Besides the raw conversion, the output is tidied so it is usable as AsciiDoc:
+Three engines produce the AsciiDoc:
+
+* ``tagged`` (PDFs that carry a structure tree, which Word and Acrobat exports do): reads the
+  tags, fonts and cell borders directly (see ``pdf_to_asciidoc``). Tables keep their rows,
+  spans and alignment; lists, heading levels and bold/italic/superscript survive.
+* ``layout`` (PDFs with a text layer but no tags, such as FOP or print-to-PDF output): the same
+  extractor, reading paragraphs from line spacing, tables from ruling lines, headings from
+  numbering and type size, and dropping repeated headers and footers.
+* ``docling`` (scans, and anything else): Docling parses the document, then Markdown and
+  Pandoc turn it into AsciiDoc. Lossier: no spans, flat headings, little inline formatting.
+
+``auto`` (the default) uses ``tagged`` when the PDF is tagged, ``layout`` when it has a text layer,
+and Docling otherwise. Check a conversion with ``check_fidelity.py``.
+
+For the Docling engine the output is also tidied so it is usable as AsciiDoc:
 
 * Pictures are written to an images directory and referenced with ``image::``.
 * A Word/PDF table of contents (a list of titles and page numbers) is removed
@@ -37,10 +77,11 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Sequence, Union
 from urllib.parse import unquote
 
 SUPPORTED_EXTENSIONS = (".pdf", ".docx")
+ENGINES = ("auto", "tagged", "layout", "docling")
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -222,7 +263,7 @@ class DocumentToAsciiDocConverter:
     """
     Convert PDF or Word (.docx) bytes or files to an AsciiDoc string.
 
-    Pipeline:
+    Tagged PDFs go through ``pdf_to_asciidoc``. Everything else uses the Docling pipeline:
     1) Docling parses the document into a structured representation and
        writes its pictures to disk.
     2) The Markdown export is tidied (TOC removed, headings normalized).
@@ -233,6 +274,13 @@ class DocumentToAsciiDocConverter:
         (decorative rules and bullets).
     toc: True always adds `:toc:`, False never does, None (default) adds it
         only when a Word/PDF table of contents was found and removed.
+        (Docling engine only.)
+    engine: "auto" (default), "tagged", "layout" or "docling"; see the module docstring.
+    ocr: read tables stored as pictures with three OCR engines (tagged and layout engines); see the note
+        at the top of this file. ``notes`` lists what it did after a conversion.
+    ignore: regular expressions for PDF text lines to drop as page furniture
+        (letterhead, running headers); untagged text is dropped already.
+        (Tagged and layout engines.)
     """
 
     def __init__(
@@ -240,26 +288,41 @@ class DocumentToAsciiDocConverter:
         extract_images: bool = True,
         min_image_size: int = 16,
         toc: Optional[bool] = None,
+        engine: str = "auto",
+        ignore: Sequence[str] = (),
+        ocr: bool = True,
     ) -> None:
-        try:
-            from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
-            from docling.document_converter import DocumentConverter, PdfFormatOption
-        except ImportError as exc:
-            raise RuntimeError(
-                "Docling is required. Install it with: pip install docling"
-            ) from exc
-
+        if engine not in ENGINES:
+            raise ValueError(f"engine must be one of {', '.join(ENGINES)}")
         self._extract_images = extract_images
         self._min_image_size = min_image_size
         self._toc = toc
+        self._engine = engine
+        self._ignore = tuple(ignore)
+        self._ocr = ocr
+        self._docling: Any = None
+        self.last_engine: Optional[str] = None
+        self.notes: list[str] = []
 
-        pdf_options = PdfPipelineOptions(
-            generate_picture_images=extract_images, images_scale=2.0
-        )
-        self._converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)}
-        )
+    def _docling_converter(self) -> Any:
+        """Docling is heavy (PyTorch), so it is only loaded when a document needs it."""
+        if self._docling is None:
+            try:
+                from docling.datamodel.base_models import InputFormat
+                from docling.datamodel.pipeline_options import PdfPipelineOptions
+                from docling.document_converter import DocumentConverter, PdfFormatOption
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Docling is required. Install it with: pip install docling"
+                ) from exc
+
+            pdf_options = PdfPipelineOptions(
+                generate_picture_images=self._extract_images, images_scale=2.0
+            )
+            self._docling = DocumentConverter(
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)}
+            )
+        return self._docling
 
     def convert_file(
         self,
@@ -300,13 +363,23 @@ class DocumentToAsciiDocConverter:
         extension = detect_extension(data, source_name)
         stem = Path(source_name).stem if source_name else "document"
 
+        if extension == ".pdf" and self._engine != "docling":
+            converted = self._convert_pdf(data, stem, images_dir, image_ref_prefix)
+            if converted is not None:
+                return converted
+            if self._engine == "tagged":
+                raise ValueError("the PDF has no structure tree, so the tagged engine cannot read it")
+            if self._engine == "layout":
+                raise ValueError("the PDF has no text layer (a scan?), so the layout engine cannot read it")
+        self.last_engine = "docling"
+
         from docling.datamodel.base_models import DocumentStream
         from docling_core.types.doc import ImageRefMode
 
         # Docling selects its parser from the stream name's extension, so the
         # name must carry the detected extension rather than the caller's.
         stream = DocumentStream(name=f"{stem}{extension}", stream=io.BytesIO(data))
-        document = self._converter.convert(stream, raises_on_error=True).document
+        document = self._docling_converter().convert(stream, raises_on_error=True).document
 
         write_images = self._extract_images and images_dir is not None
         with tempfile.TemporaryDirectory() as tmp:
@@ -340,6 +413,42 @@ class DocumentToAsciiDocConverter:
         add_toc = had_toc if self._toc is None else self._toc
         return self._markdown_to_asciidoc(markdown, title, add_toc)
 
+    def _convert_pdf(
+        self,
+        data: bytes,
+        stem: str,
+        images_dir: Union[str, Path, None],
+        image_ref_prefix: Optional[str],
+    ) -> Optional[str]:
+        """AsciiDoc from the PDF's tags or, failing that, its layout; None when neither engine applies.
+        Sets ``last_engine`` and ``notes``."""
+        from pdf_to_asciidoc import TaggedPdfConverter
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_path = Path(tmp) / f"{stem}.pdf"
+            pdf_path.write_bytes(data)
+            if self._engine in ("auto", "tagged") and TaggedPdfConverter.usable(pdf_path):
+                layout = False
+            elif self._engine in ("auto", "layout") and TaggedPdfConverter.layout_usable(pdf_path):
+                layout = True
+            else:
+                return None
+            write_images = self._extract_images and images_dir is not None
+            converter = TaggedPdfConverter(
+                pdf_path,
+                title=stem.replace("_", " "),
+                images_dir=images_dir if write_images else None,
+                image_ref_prefix=image_ref_prefix,
+                ignore=self._ignore,
+                min_image_size=self._min_image_size,
+                ocr=self._ocr,
+                layout=layout,
+            )
+            asciidoc = converter.convert()
+            self.last_engine = "layout" if layout else "tagged"
+            self.notes = converter.notes
+            return asciidoc
+
     def _relocate_images(
         self,
         markdown: str,
@@ -364,8 +473,12 @@ class DocumentToAsciiDocConverter:
                 return match.group(0)
 
             if reference not in moved:
-                with Image.open(source) as image:
-                    too_small = min(image.size) < self._min_image_size
+                try:
+                    with Image.open(source) as image:
+                        too_small = min(image.size) < self._min_image_size
+                except OSError as exc:  # Pillow cannot read .emf/.wmf and some other formats
+                    print(f"warning: skipping a picture Pillow cannot read ({source.name}: {exc})", file=sys.stderr)
+                    too_small = True
                 if too_small:
                     moved[reference] = None
                 else:
@@ -420,10 +533,10 @@ class DocumentToAsciiDocConverter:
 
 
 def convert_to_asciidoc(
-    path: Union[str, Path], images_dir: Union[str, Path, None] = None
+    path: Union[str, Path], images_dir: Union[str, Path, None] = None, engine: str = "auto"
 ) -> str:
     """Convenience wrapper: convert one file to AsciiDoc."""
-    return DocumentToAsciiDocConverter().convert_file(path, images_dir=images_dir)
+    return DocumentToAsciiDocConverter(engine=engine).convert_file(path, images_dir=images_dir)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -445,13 +558,37 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--no-images", action="store_true", help="Leave pictures out of the output"
     )
+    parser.add_argument(
+        "--engine",
+        choices=ENGINES,
+        default="auto",
+        help="auto (default): the PDF's tags, else its layout, else Docling (scans)",
+    )
+    parser.add_argument(
+        "--ignore",
+        action="append",
+        default=[],
+        metavar="REGEX",
+        help="PDF text lines to drop as page furniture (repeatable; tagged and layout engines)",
+    )
+    # AI assistants: ask the user before running this with OCR on; see the note at the top of this file.
+    parser.add_argument(
+        "--ocr",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="read tables stored as pictures with three OCR engines (default: on; --no-ocr keeps the "
+        "pictures and downloads nothing). Needs requirements-ocr.txt; first run downloads ~110 MB of "
+        "models; results need checking. Tagged and layout engines only.",
+    )
     args = parser.parse_args(argv)
 
     output = args.output or args.input.with_suffix(".adoc")
     images_dir = None if args.no_images else (args.images_dir or output.parent / "images")
 
     try:
-        converter = DocumentToAsciiDocConverter(extract_images=not args.no_images)
+        converter = DocumentToAsciiDocConverter(
+            extract_images=not args.no_images, engine=args.engine, ignore=args.ignore, ocr=args.ocr
+        )
         asciidoc = converter.convert_file(
             args.input,
             images_dir=images_dir,
@@ -468,7 +605,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(asciidoc, encoding="utf-8")
-    print(f"Wrote {output} ({len(asciidoc)} characters)")
+    print(f"Wrote {output} ({len(asciidoc)} characters, {converter.last_engine} engine)")
+    for note in converter.notes:
+        print(f"  {note}", file=sys.stderr)
     return 0
 
 

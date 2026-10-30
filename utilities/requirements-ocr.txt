@@ -1,0 +1,9 @@
+# Optional: OCR for tables that a PDF stores as pictures (picture_tables.py).
+# Install with:  pip install -r utilities/requirements-ocr.txt   (setup.sh does it unless given --no-ocr)
+#
+# Without these packages the converter still works; it keeps such pictures as pictures. RapidOCR, the
+# third engine, comes with Docling. Models are fetched on first use, never at install time and never
+# with --no-ocr: Tesseract English data (~15 MB, ~/.cache/ike-dex-docs/tessdata) and EasyOCR (~93 MB,
+# ~/.EasyOCR). The packages themselves, with scipy, scikit-image and shapely, add about 160 MB.
+easyocr>=1.7
+tesserocr>=2.8

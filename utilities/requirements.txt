@@ -5,3 +5,10 @@
 docling>=2
 pypandoc>=1.13
 Pillow>=10
+
+# pdf_to_asciidoc.py and check_fidelity.py (PDF tags, fonts and cell borders; Docling already brings
+# pypdfium2 and OpenCV)
+pdfplumber>=0.11
+
+# OCR for tables stored as pictures is optional: see requirements-ocr.txt
+# (document_to_asciidoc.py --no-ocr never loads it).
