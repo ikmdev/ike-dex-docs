@@ -436,7 +436,7 @@ class DocumentToAsciiDocConverter:
             write_images = self._extract_images and images_dir is not None
             converter = TaggedPdfConverter(
                 pdf_path,
-                title=stem.replace("_", " "),
+                title="",  # the converter uses the PDF's own title, else the file name
                 images_dir=images_dir if write_images else None,
                 image_ref_prefix=image_ref_prefix,
                 ignore=self._ignore,

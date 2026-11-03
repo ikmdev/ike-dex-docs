@@ -57,6 +57,28 @@ _SEMANTIC_TAG_RE = re.compile(r"H[1-6]?|TOC|TOCI|Caption")
 # A gap wider than this many ems between two characters of a line starts a new column.
 _COLUMN_GAP = 3.0
 
+# Words that mark a callout, with the AsciiDoc admonition each one becomes.
+_ADMONITIONS = {
+    "note": "NOTE", "notes": "NOTE", "notice": "NOTE", "tip": "TIP", "hint": "TIP", "important": "IMPORTANT",
+    "attention": "IMPORTANT", "warning": "WARNING", "danger": "WARNING", "caution": "CAUTION",
+}
+# A paragraph that opens with the label and a colon: "Note: ...", "Note Important: ...".
+_CALLOUT_RE = re.compile(
+    r"^(?:(?:notes?|tip|hint)\s+)?(?P<word>notes?|notice|tip|hint|important|attention|warning|danger|caution)\s*:\s*",
+    re.IGNORECASE,
+)
+
+# A caption: "Table 6. Title", "Figure 2: Title", "Fig. 3 - Title".
+_CAPTION_RE = re.compile(
+    r"^(?P<label>(?P<word>Table|Figure|Fig\.|Chart|Exhibit|Diagram)\s+(?P<number>[A-Z]?\d+(?:[.-]\d+)*[A-Za-z]?)"
+    r"\s*[.:\u2013\u2014-])\s*(?P<title>\S.*)$",
+    re.DOTALL,
+)
+
+# The title over a list of contents ("Table of Contents"), and over a list of tables or figures.
+_CONTENTS_TITLE_RE = re.compile(r"^(?:table of|list of)\s+contents\s*$|^contents\s*$", re.IGNORECASE)
+_LIST_TITLE_RE = re.compile(r"^(?:table of|list of)\s+(?P<what>tables|figures|illustrations)\s*$", re.IGNORECASE)
+
 # Tolerances in PDF points.
 _LINE_OVERLAP = 0.4
 _EDGE_TOL = 2.5
@@ -80,6 +102,9 @@ class Ch:
     italic: bool
     owner: Optional[int]
     page: int
+    link: Optional[str] = None  # the address of the link annotation over the character
+    link_title: str = ""  # the link annotation's own text (a tooltip), where it has one
+    underline: bool = False  # a thin line is drawn right under it
 
 
 @dataclasses.dataclass
@@ -118,6 +143,100 @@ def make_char(raw: dict, owner: Optional[int], page: int) -> Ch:
     )
 
 
+_LINK_SCHEMES = ("http://", "https://", "mailto:", "ftp://")
+
+
+def _annotation_text(annotation: dict) -> str:
+    """The text a link annotation carries for a viewer's tooltip (its /Contents), or ""."""
+    raw = (annotation.get("data") or {}).get("Contents")
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-16" if raw[:2] in (b"\xfe\xff", b"\xff\xfe") else "latin-1", errors="replace")
+    return " ".join(str(raw).split()) if raw else ""
+
+
+def mark_links(page: Any, chars: Iterable[Ch]) -> None:
+    """Characters under a link annotation to a web or mail address carry it. Links to a file path or a
+    bookmark of the author's own machine (a Word document's internal references) go nowhere and are left
+    as plain text."""
+    areas = [(a["x0"], a["top"], a["x1"], a["bottom"], a["uri"], _annotation_text(a)) for a in (page.annots or [])
+             if isinstance(a.get("uri"), str) and a["uri"].lower().startswith(_LINK_SCHEMES)]
+    if not areas:
+        return
+    for ch in chars:
+        if not ch.text.strip():
+            continue
+        cx, cy = (ch.x0 + ch.x1) / 2, (ch.top + ch.bottom) / 2
+        for x0, top, x1, bottom, uri, title in areas:
+            if x0 - 1 <= cx <= x1 + 1 and top - 1 <= cy <= bottom + 1:
+                ch.link, ch.link_title = uri, title
+                break
+
+
+def mask_values(data: bytes, decode: list) -> bytes:
+    """Soft-mask bytes as opacity. A mask with /Decode [1 0] is stored inverted; read as stored, a picture
+    that is wholly opaque comes out wholly transparent."""
+    if len(decode) >= 2 and decode[0] > decode[1]:
+        return bytes(255 - b for b in data)
+    return bytes(data)
+
+
+def mark_underlines(page: Any, chars: Iterable[Ch]) -> None:
+    """Characters with a thin line drawn right under them are underlined. A rule is not an underline: it
+    runs beyond its text (a cell border, a rule under a heading), where an underline starts and ends with
+    the words it marks. A linked character is left alone; its link already shows."""
+    segments = []
+    for kind in ("rects", "lines", "curves"):
+        for item in getattr(page, kind):
+            height, width = item["bottom"] - item["top"], item["x1"] - item["x0"]
+            if height <= 1.5 and width >= 6:
+                segments.append(((item["top"] + item["bottom"]) / 2, item["x0"], item["x1"]))
+    if not segments:
+        return
+    visible = [c for c in chars if c.text.strip()]
+    for y, x0, x1 in segments:
+        under = [c for c in visible if x0 - 1.5 <= (c.x0 + c.x1) / 2 <= x1 + 1.5
+                 and c.bottom - 0.35 * c.size <= y <= c.bottom + 0.3 * c.size]
+        if not under:
+            continue
+        top = min(under, key=lambda c: c.top).top
+        row = sorted((c for c in under if abs(c.top - top) <= 0.5 * c.size), key=lambda c: c.x0)
+        first, last = row[0], row[-1]
+        if not any(c.text.isalnum() for c in row):
+            continue  # a full stop or an asterisk the line happens to run under
+        if abs(first.x0 - x0) > 3 or not -2.5 <= x1 - last.x1 <= 4 or (x1 - x0) > 1.15 * (last.x1 - first.x0) + 4:
+            continue
+        covered = [c for c in chars if first.x0 - 0.1 <= c.x0 and c.x1 <= last.x1 + 0.1
+                   and abs(c.top - first.top) <= 0.5 * c.size and not c.link]
+        if not any(c.text.isalnum() for c in covered):
+            continue  # all that is left, once the link's own text is set aside, is a full stop
+        for c in covered:
+            c.underline = True
+    # a line drawn in pieces can stop in the middle of a word, and no one underlines half a word
+    rows: dict[int, list[Ch]] = collections.defaultdict(list)
+    for c in chars:
+        if c.text.strip():
+            rows[round(c.top / 2)].append(c)
+    for row in rows.values():
+        row.sort(key=lambda c: c.x0)
+        for _ in range(2):
+            for a, b in zip(row, row[1:]):
+                if b.x0 - a.x1 < 0.2 * a.size and not a.link and not b.link and a.underline != b.underline:
+                    a.underline = b.underline = True
+
+
+def run_mcid(raw: dict, previous: Optional[dict]) -> Optional[int]:
+    """The marked-content id of a character. A producer can write a ligature ("ﬁ") and the letters after it
+    outside the marked content, so an untagged character that follows a tagged one on the same line,
+    close behind it, belongs to the same run."""
+    mcid = raw.get("mcid")
+    if mcid is not None or previous is None or previous.get("mcid") is None:
+        return mcid
+    size = raw.get("size") or (raw["bottom"] - raw["top"])
+    if abs(raw["top"] - previous["top"]) <= 0.5 * size and -0.5 * size <= raw["x0"] - previous["x1"] <= 0.5 * size:
+        return previous["mcid"]
+    return None
+
+
 def _split_columns(members: list[Ch]) -> list[list[Ch]]:
     """Split a line of characters where a wide gap separates side-by-side columns (a form's label and
     value pairs, say), so the columns do not run together into one line of text."""
@@ -125,9 +244,13 @@ def _split_columns(members: list[Ch]) -> list[list[Ch]]:
     previous: Optional[Ch] = None
     size = max((c.size for c in members if c.text.strip()), default=10)
     for ch in members:
-        if previous is not None and ch.text.strip() and previous.text.strip() \
-                and ch.x0 - previous.x1 > _COLUMN_GAP * size:
-            groups.append([])
+        if previous is not None and ch.text.strip() and previous.text.strip():
+            # Where the type size changes a lot (a title and a notice set beside it), the gap is judged in
+            # ems of the smaller type: the larger one would make a clear gap look narrow.
+            small, large = sorted((previous.size, ch.size))
+            em = small if large >= 1.5 * small and small >= 0.4 * size else size
+            if ch.x0 - previous.x1 > _COLUMN_GAP * em:
+                groups.append([])
         groups[-1].append(ch)
         if ch.text.strip():
             previous = ch
@@ -161,21 +284,23 @@ def group_lines(chars: Iterable[Ch]) -> list[Line]:
     for members, (top, bottom) in zip(lines, extents):
         members.sort(key=lambda c: c.x0)
         for group in _split_columns(members):
-            visible = [c for c in group if c.text.strip()] or group
-            size = max(c.size for c in visible)
-            main = [c for c in visible if c.size >= 0.9 * size] or visible
-            owners = collections.Counter(c.owner for c in visible if c.owner is not None)
-            result.append(
-                Line(
-                    chars=group, top=top, bottom=bottom,
-                    x0=min(c.x0 for c in visible), x1=max(c.x1 for c in visible),
-                    size=size, baseline=statistics.median(c.bottom for c in main),
-                    owner=owners.most_common(1)[0][0] if owners else None,
-                    page=group[0].page,
-                )
-            )
+            result.append(_line_of(group, top, bottom))
     result.sort(key=lambda ln: (ln.page, ln.top, ln.x0))
     return result
+
+
+def _line_of(group: list[Ch], top: float, bottom: float) -> Line:
+    visible = [c for c in group if c.text.strip()] or group
+    size = max(c.size for c in visible)
+    main = [c for c in visible if c.size >= 0.9 * size] or visible
+    owners = collections.Counter(c.owner for c in visible if c.owner is not None)
+    return Line(
+        chars=group, top=top, bottom=bottom,
+        x0=min(c.x0 for c in visible), x1=max(c.x1 for c in visible),
+        size=size, baseline=statistics.median(c.bottom for c in main),
+        owner=owners.most_common(1)[0][0] if owners else None,
+        page=group[0].page,
+    )
 
 
 Style = tuple  # (bold, italic, script) with script in (None, "sup", "sub")
@@ -199,7 +324,14 @@ def line_units(line: Line) -> list[Unit]:
                     script = "sup"
                 elif ch.bottom > line.baseline + 0.12 * line.size:
                     script = "sub"
-            units.append((ch.text, (ch.bold, ch.italic, script)))
+            elif ch.size >= 0.8 * line.size:
+                # Some producers raise a mark without shrinking it, so only the offset says it is one. A
+                # glyph in a line of its own size has to sit well off the baseline to count.
+                if ch.bottom < line.baseline - 0.3 * line.size:
+                    script = "sup"
+                elif ch.bottom > line.baseline + 0.3 * line.size:
+                    script = "sub"
+            units.append((ch.text, (ch.bold, ch.italic, script, ch.link, ch.underline, ch.link_title)))
         previous = ch
     return units
 
@@ -299,7 +431,10 @@ def render_units(units: Sequence[Unit], *, bold: bool = True) -> str:
         lead = text[: len(text) - len(text.lstrip())]
         trail = text[len(text.rstrip()):]
         body = escape(text.strip())
-        is_bold, is_italic, script = style
+        is_bold, is_italic, script, *rest = style
+        link = rest[0] if rest else None
+        underline = rest[1] if len(rest) > 1 else False
+        title = rest[2] if len(rest) > 2 else ""
         if script and (len(text.strip()) > 8 or " " in text.strip()):
             script = None  # ^...^ and ~...~ cannot hold spaces, and a long run is small text, not a mark
         if script == "sup":
@@ -314,6 +449,21 @@ def render_units(units: Sequence[Unit], *, bold: bool = True) -> str:
                 body = f"__{body}__" if unconstrained else f"_{body}_"
             if is_bold and bold:
                 body = f"**{body}**" if unconstrained else f"*{body}*"
+        if link:
+            # A comma or equals sign would start another attribute (quotes stay in the text of a link macro, so
+            # they are written as character references); {empty} keeps a dot from reading as a role in Pandoc.
+            body = body.replace(",", "&#44;").replace("=", "&#61;")
+            if "." in body:
+                body = "{empty}" + body
+            # link: works after any character; a bare address is only taken as a link after a space
+            target = link if link.lower().startswith("mailto:") else "link:" + link
+            tip = f',title="{title.replace(chr(34), chr(39)).replace(chr(93), chr(41))}"' if title else ""
+            scheme = re.search(r"https?://$", pieces[-1]) if pieces else None
+            if scheme:  # the address was set in two runs; the link carries its own scheme
+                pieces[-1] = pieces[-1][: scheme.start()]
+            body = f"{target.replace(' ', '%20')}[{body.replace(']', chr(92) + ']')}{tip}]"
+        elif underline:
+            body = f"[.underline]##{body}##"
         pieces.append(f"{lead}{body}{trail}")
     return "".join(pieces).strip().replace("\x01", "&#46;").replace("\x02", "&#41;").replace("\x04", "&#45;")
 
@@ -343,8 +493,16 @@ class Block:
     content_x: float = 0.0
     # heading
     level: int = 0
-    # table / image payload
+    # table / image / callout payload
     payload: Any = None
+    # callout: (group id, admonition) of the box this paragraph sits in, and whether its own text said so
+    callout: Optional[tuple[int, str]] = None
+    callout_inline: bool = False
+    callout_word: str = ""  # the label as the document wrote it ("Notice"), for a label the admonition lacks
+    # table / image: the caption written for it (label, anchor id, title)
+    caption: Optional[tuple[str, str, str]] = None
+    # a title over a list of tables or figures: which ("table" or "figure"); the entries are rebuilt from captions
+    listof: str = ""
 
 
 def _letter_value(label: str) -> int:
@@ -442,6 +600,125 @@ def flow_blocks(lines: list[Line], layout: bool = False, right_edge: float = 0.0
     if current:
         blocks.append(_lines_to_block(current))
     return blocks
+
+
+@dataclasses.dataclass
+class MarginLabel:
+    kind: str  # the admonition
+    line: Line  # the label alone
+    column: float  # where the text beside it starts
+    word: str = ""  # as written
+
+
+def _lead_word(line: Line) -> tuple[str, list[Ch]]:
+    """The first word of a line, as the text and the characters that spell it."""
+    chars: list[Ch] = []
+    for ch in line.chars:
+        if not ch.text.strip():
+            if chars:
+                break
+            continue
+        if chars and ch.x0 - chars[-1].x1 > 0.3 * line.size:
+            break
+        chars.append(ch)
+    return "".join(c.text for c in chars), chars
+
+
+def _text_x0(line: Line) -> float:
+    """Where a line's text starts: past a margin label at its head, which hangs out of the text column and
+    would otherwise stand for the column's edge (two callouts a few lines apart would hide each other)."""
+    word, spelled = _lead_word(line)
+    if word and not word.endswith(":") and word.lower() in _ADMONITIONS and all(c.bold for c in spelled):
+        rest = [c.x0 for c in line.chars if c.x0 >= spelled[-1].x1 - 0.1 and c.text.strip() and c not in spelled]
+        if rest:
+            return min(rest)
+    return line.x0
+
+
+def take_margin_labels(chars: list[Ch]) -> tuple[list[Ch], list[MarginLabel]]:
+    """Callouts in technical documents carry their label ("Note", "Important") in the margin beside the
+    box, so the label shares a line with the middle of the text and splits it (and, being taller, joins the
+    lines above and below it into one). A bold label word with text beginning just right of it, on its own
+    line or among the lines above or below, is such a label: its characters are taken out and returned
+    apart. A label at the text's own indent, or with a colon after it, is part of the paragraph."""
+    lines = group_lines(chars)
+    labels: list[MarginLabel] = []
+    removed: set[int] = set()
+    for line in lines:
+        word, spelled = _lead_word(line)
+        kind = _ADMONITIONS.get(word.lower()) if not word.endswith(":") else None
+        if kind is None or sum(1 for c in spelled if c.bold) < 0.9 * len(spelled):
+            continue
+        right = spelled[-1].x1
+        top, bottom = min(c.top for c in spelled), max(c.bottom for c in spelled)
+        neighbours = [_text_x0(o) for o in lines if o is not line and o.page == line.page and not o.blank
+                      and o.bottom > top - 4 * line.size and o.top < bottom + 4 * line.size]
+        rest = [c for c in line.chars if c.x0 >= right - 0.1 and c not in spelled and c.text.strip()]
+        if rest:
+            column = min(c.x0 for c in rest)
+            # a label that opens the text's own indent is a word of the paragraph; one that hangs out
+            # into the margin, with the text clear of it, is the callout's label
+            beside = 0.35 * line.size <= column - right <= 4 * line.size \
+                and bool(neighbours) and spelled[0].x0 < min(neighbours) - 0.5 * line.size
+        else:
+            near = [x for x in neighbours if x >= right - 0.1 and x - right <= 4 * line.size]
+            column, beside = (min(near), True) if near else (0.0, False)
+        if beside:
+            labels.append(MarginLabel(kind, _line_of(spelled, top, bottom), column, word))
+            removed.update(id(c) for c in spelled)
+    return [c for c in chars if id(c) not in removed], labels
+
+
+def assign_callouts(blocks: list[Block], labels: list[MarginLabel], horizontal: Sequence[tuple[float, float, float]],
+                    first_id: int) -> list[Block]:
+    """Mark the paragraphs a margin label belongs to. The box is what lies between the rules above and
+    below the label, when the page draws them; else the paragraph beside the label. A label with nothing
+    beside it stays in the text as a paragraph, so no text is lost."""
+    extra: list[Block] = []
+    for number, label in enumerate(labels):
+        line = label.line
+        centre = (line.top + line.bottom) / 2
+        above = [y for y, a, b in horizontal if y <= line.top + 0.3 * line.size and line.top - y <= 24 * line.size
+                 and a <= label.column + 6 and b >= label.column + 12 * line.size]
+        below = [y for y, a, b in horizontal if y >= line.bottom - 0.3 * line.size and y - line.bottom <= 24 * line.size
+                 and a <= label.column + 6 and b >= label.column + 12 * line.size]
+        members: list[Block] = []
+        if above and below:
+            top, bottom = max(above), min(below)
+            members = [b for b in blocks if b.kind == "para" and b.page == line.page and b.callout is None
+                       and b.x0 >= label.column - 6 and top - 1 <= (b.top + b.bottom) / 2 <= bottom + 1]
+        if not members:
+            near = [b for b in blocks if b.kind == "para" and b.page == line.page and b.callout is None
+                    and b.x0 >= label.column - 6
+                    and b.top - 0.5 * line.size <= centre <= b.bottom + 0.5 * line.size]
+            members = near[:1]
+        if not members:
+            extra.append(_lines_to_block([line]))
+            continue
+        for member in members:
+            member.callout = (first_id + number, label.kind)
+            member.callout_word = label.word
+    return extra
+
+
+def callout_in_text(block: Block) -> None:
+    """A paragraph that opens with "Note:" (or Important, Warning, ...) is a callout: the label becomes the
+    admonition and leaves the text."""
+    match = _CALLOUT_RE.match(plain(block.units))
+    if not match:
+        return
+    seen = 0
+    for cut, (text, _) in enumerate(block.units):
+        seen += len(text)
+        if seen >= match.end():
+            break
+    rest = block.units[cut + 1:]
+    if not rest:
+        return  # the label stands alone: leave it as text rather than write an empty callout
+    block.units = rest
+    block.callout = (block.callout[0] if block.callout else -1, _ADMONITIONS[match.group("word").lower()])
+    block.callout_inline = True
+    block.callout_word = match.group("word")
 
 
 @dataclasses.dataclass
@@ -562,6 +839,9 @@ class Cell:
     colspan: int = 1
     rowspan: int = 1
     page: int = 0
+    tag_colspan: int = 1  # spans stated by the tags (a Chrome export has them; Word and Prince do not)
+    tag_rowspan: int = 1
+    pictures: list = dataclasses.field(default_factory=list)  # picture blocks drawn inside the cell
 
 
 @dataclasses.dataclass
@@ -571,6 +851,72 @@ class Table:
     first_page: int
     top: float = 0.0
     emitted: bool = False
+    legend: bool = False  # found beside a picture from its text alone, no ruling lines
+
+
+def text_grid(chars: list[Ch], page: int) -> Optional[Table]:
+    """A table drawn with no lines, read from the text alone: words fall in columns that are separated by
+    gutters no row crosses, and in rows that sit one under another. It takes three rows and two columns, and
+    most rows must reach into two columns, which running text never does: its words are a space apart
+    everywhere, so it is one column. Returns None for anything else."""
+    visible = [c for c in chars if c.text.strip()]
+    if len(visible) < 6:
+        return None
+    size = statistics.median(c.size for c in visible)
+    # columns: the x ranges that hold text, apart where the gap is wider than a word space can be
+    spans = sorted((c.x0, c.x1) for c in visible)
+    columns: list[list[float]] = [[spans[0][0], spans[0][1]]]
+    for x0, x1 in spans[1:]:
+        if x0 - columns[-1][1] > 1.0 * size:
+            columns.append([x0, x1])
+        else:
+            columns[-1][1] = max(columns[-1][1], x1)
+    if len(columns) < 2:
+        return None
+    # rows: lines whose vertical middles are close are one row
+    lines = sorted((ln for ln in group_lines(visible) if not ln.blank), key=lambda ln: (ln.top + ln.bottom) / 2)
+    rows: list[list[Line]] = []
+    for line in lines:
+        middle = (line.top + line.bottom) / 2
+        last = rows[-1][0] if rows else None
+        if last is not None and abs(middle - (last.top + last.bottom) / 2) <= 0.5 * size:
+            rows[-1].append(line)
+        else:
+            rows.append([line])
+    if len(rows) < 3:
+        return None
+
+    def column_of(ch: Ch) -> int:
+        middle = (ch.x0 + ch.x1) / 2
+        return next(i for i, (a, b) in enumerate(columns) if a - 0.1 <= middle <= b + 0.1)
+
+    cells: list[list[list[Ch]]] = []
+    for row in rows:
+        entry: list[list[Ch]] = [[] for _ in columns]
+        for line in row:
+            for ch in line.chars:
+                if ch.text.strip():
+                    entry[column_of(ch)].append(ch)
+        cells.append(entry)
+    reaching = sum(1 for entry in cells if sum(1 for cell in entry if cell) >= 2)
+    if reaching < 0.7 * len(rows) or any(sum(1 for entry in cells if entry[i]) < 0.5 * len(rows) for i in range(len(columns))):
+        return None
+    edges = [columns[0][0] - 6] + [(columns[i][1] + columns[i + 1][0]) / 2 for i in range(len(columns) - 1)] + [columns[-1][1] + 6]
+    tops = [min(c.top for cell in entry for c in cell) - 1 for entry in cells]
+    bottoms = [t for t in tops[1:]] + [max(c.bottom for cell in cells[-1] for c in cell) + 1]
+    table_rows: list[list[Cell]] = []
+    for r, entry in enumerate(cells):
+        table_rows.append([
+            Cell(header=r == 0 and bool(cell) and all(c.bold for c in cell), chars=cell,
+                 rect=(edges[i], tops[r], edges[i + 1], bottoms[r]), col=i, page=page)
+            for i, cell in enumerate(entry)
+        ])
+    first = table_rows[0]
+    for cell in first:  # a header row is all bold or none is
+        cell.header = all(c.header for c in first)
+    table = Table(rows=table_rows, pages={page}, first_page=page, legend=True)
+    table.top = tops[0]
+    return table
 
 
 def _cluster(values: Iterable[float], tolerance: float = _EDGE_TOL) -> list[float]:
@@ -676,6 +1022,39 @@ class PageBorders:
                 min(below) if below else bottom + 2)
 
 
+def vector_regions(page: Any) -> list[tuple[float, float, float, float]]:
+    """Areas of a page drawn with curves: logos, symbols, icons and diagrams that are paths, not images.
+    Curves (and the filled shapes beside them) are grouped where they lie within a few points of each
+    other. Borders and rules are thin and ignored; a group of rectangles alone is a table or a text
+    box, not a picture, and a group needs several curves to be one."""
+    objects = []
+    for kind in ("curves", "rects"):
+        for item in getattr(page, kind):
+            width, height = item["x1"] - item["x0"], item["bottom"] - item["top"]
+            if min(width, height) <= 2.0 or width * height > 0.5 * page.width * page.height:
+                continue
+            objects.append((kind, item["x0"], item["top"], item["x1"], item["bottom"]))
+    if len(objects) > 600:
+        objects = [o for o in objects if o[0] == "curves"]
+    groups: list[list[tuple]] = []
+    for item in objects:
+        merged = [item]
+        for group in groups[:]:
+            if any(not (item[3] + 6 < m[1] or m[3] + 6 < item[1] or item[4] + 6 < m[2] or m[4] + 6 < item[2])
+                   for m in group):
+                merged += group
+                groups.remove(group)
+        groups.append(merged)
+    found = []
+    for group in groups:
+        curves = sum(1 for m in group if m[0] == "curves")
+        x0, top = max(min(m[1] for m in group), 0.0), max(min(m[2] for m in group), 0.0)
+        x1, bottom = min(max(m[3] for m in group), page.width), min(max(m[4] for m in group), page.height)
+        if curves >= 2 and 2 * curves >= len(group) and len(group) <= 80 and x1 - x0 >= 10 and bottom - top >= 10:
+            found.append((x0, top, x1, bottom))
+    return found
+
+
 def _assign_grid(table: Table) -> bool:
     """Work out column and row spans from cell rectangles. Returns False when they do not fit."""
     # The tags sometimes list the lines of one vertically merged cell as several rows; the cells
@@ -775,6 +1154,90 @@ def _pad_rows(table: Table) -> int:
     return width
 
 
+def _grid_from_tags(table: Table) -> bool:
+    """Place cells by the spans the tags state. False when none is stated or the rows do not line up."""
+    if not any(c.tag_colspan > 1 or c.tag_rowspan > 1 for row in table.rows for c in row):
+        return False
+    occupied: set[tuple[int, int]] = set()
+    widths = []
+    for r, row in enumerate(table.rows):
+        cursor = 0
+        for cell in row:
+            while (r, cursor) in occupied:
+                cursor += 1
+            cell.col, cell.colspan, cell.rowspan = cursor, cell.tag_colspan, cell.tag_rowspan
+            for dr in range(cell.rowspan):
+                for dc in range(cell.colspan):
+                    occupied.add((r + dr, cursor + dc))
+            cursor += cell.colspan
+        while (r, cursor) in occupied:
+            cursor += 1
+        widths.append(cursor)
+    ncols = max(widths, default=0)
+    last = len(table.rows)
+    return (ncols > 0 and all(w == ncols for w in widths)
+            and all(r < last for r, _ in occupied))  # a row span must not run past the last row
+
+
+def _cell_text(cell: Cell) -> str:
+    return re.sub(r"\s+", "", "".join(c.text for c in cell.chars))
+
+
+def _header_row_count(table: Table) -> int:
+    """Rows of the table's header: the leading rows made only of header cells. When that run is the same
+    rows twice over (a part joined to the table above with its repeated header), one copy is the header."""
+    count = 0
+    for row in table.rows:
+        if row and all(c.header and c.chars for c in row):
+            count += 1
+        else:
+            break
+    texts = [[_cell_text(c) for c in row] for row in table.rows[:count]]
+    for size in range(1, count // 2 + 1):
+        if count % size == 0 and texts == texts[:size] * (count // size):
+            return size
+    return count
+
+
+def _drop_repeated_headers(table: Table) -> int:
+    """Remove header rows that repeat the table's own header further down: a PDF repeats it at the top of
+    every page, and the rendered AsciiDoc does the same, so it is written once. Returns rows dropped."""
+    count = _header_row_count(table)
+    if not count:
+        return 0
+    key = [[_cell_text(c) for c in row] for row in table.rows[:count]]
+    dropped, i = 0, count
+    while i + count <= len(table.rows):
+        block = table.rows[i:i + count]
+        if all(row and all(c.header for c in row) for row in block) and [[_cell_text(c) for c in r] for r in block] == key:
+            del table.rows[i:i + count]
+            dropped += count
+        else:
+            i += 1
+    return dropped
+
+
+def _x_edges(table: Table) -> list[float]:
+    return _cluster(x for row in table.rows for c in row if c.rect for x in (c.rect[0], c.rect[2]))
+
+
+def _continues(first: Table, second: Table, height: float) -> bool:
+    """Is ``second`` the rest of ``first`` on the next page? It has the same columns, and either starts with the
+    header ``first`` starts with, or picks up where ``first`` stopped, at the foot of one page and the top of the next."""
+    if second.first_page != max(first.pages) + 1 or not first.rows or not second.rows:
+        return False
+    a, b = _x_edges(first), _x_edges(second)
+    # compared from each table's left edge: facing pages have mirrored margins
+    if not a or len(a) != len(b) or any(abs((x - a[0]) - (y - b[0])) > 3.0 for x, y in zip(a, b)):
+        return False
+    count = _header_row_count(first)
+    if count and [[_cell_text(c) for c in r] for r in first.rows[:count]] == [[_cell_text(c) for c in r] for r in second.rows[:count]]:
+        return True
+    ends = [c.rect[3] for row in first.rows for c in row if c.rect and c.page == max(first.pages)]
+    starts = [c.rect[1] for row in second.rows for c in row if c.rect and c.page == second.first_page]
+    return bool(ends and starts) and max(ends) > 0.75 * height and min(starts) < 0.25 * height
+
+
 # --------------------------------------------------------------------------
 # Converter
 # --------------------------------------------------------------------------
@@ -782,6 +1245,18 @@ def _pad_rows(table: Table) -> int:
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "document"
+
+
+def _span(value: Any) -> int:
+    return value if isinstance(value, int) and value > 1 else 1
+
+
+def _is_data_table(rows: list[dict]) -> bool:
+    """A tagged Table that holds data. A table of single cells is a layout box, unless it has header cells
+    and more than one row: a one-column table with its header on top (a browser export has many)."""
+    if any(len(r.get("children", [])) > 1 for r in rows):
+        return True
+    return len(rows) >= 2 and any(c["type"] == "TH" for r in rows for c in r.get("children", []))
 
 
 def _table_rows(table: dict) -> list[dict]:
@@ -831,9 +1306,18 @@ class TaggedPdfConverter:
         self.min_image_size = min_image_size
         self.slug = _slugify(self.path.stem)
         self.pdf = pdfplumber.open(str(self.path))
+        if not title:
+            self.title = self._metadata_title() or self.title
         self.images_written = 0
         self._image_repeats: collections.Counter[tuple] = collections.Counter(
             self._image_key(image) for page in self.pdf.pages for image in page.images
+        )
+        self._vector_regions: dict[int, list[tuple[float, float, float, float]]] = {
+            number: vector_regions(page) for number, page in enumerate(self.pdf.pages, 1)
+        }
+        # a drawing in the same place on several pages is the running header or footer
+        self._vector_repeats: collections.Counter[tuple] = collections.Counter(
+            tuple(round(v) for v in box) for boxes in self._vector_regions.values() for box in boxes
         )
         self.rendered_images: list[str] = []  # pictures saved as a page render, not as stored
         self._pdfium: Any = None
@@ -844,6 +1328,16 @@ class TaggedPdfConverter:
         self._reader_tried = False
         self._vocabulary_words: Optional[set[str]] = None
         self.pictures_kept = 0  # pictures left as pictures
+        self._callouts = 0  # callout boxes found so far, for their group ids
+        self._captioned: set[str] = set()  # kinds of caption written as block titles
+
+    def _metadata_title(self) -> str:
+        """The PDF's own /Title when it is a title and not a leftover (a file name, an editor's default)."""
+        value = str((self.pdf.metadata or {}).get("Title") or "").strip()
+        if (not value or value.lower().startswith(("microsoft word", "untitled", "document"))
+                or value.lower().endswith((".pdf", ".docx", ".doc", ".indd"))):
+            return ""
+        return re.sub(r"\s+", " ", value)
 
     # -- availability ------------------------------------------------------------
 
@@ -922,7 +1416,7 @@ class TaggedPdfConverter:
                 ctx = node["type"]
             if node["type"] == "Table" and node.get("children"):
                 rows = _table_rows(node)
-                if rows and any(len(r.get("children", [])) > 1 for r in rows):
+                if rows and _is_data_table(rows):
                     index = len(self.tables)
                     table_rows: list[list[Cell]] = []
                     for r, row in enumerate(rows):
@@ -931,9 +1425,12 @@ class TaggedPdfConverter:
                             keys = leaves(cell, page)
                             for p, mcid, _ in keys:
                                 self.cell_of[(p, mcid)] = (index, r, c)
+                            attrs = cell.get("attributes") or {}
                             cells.append(
                                 Cell(header=cell["type"] == "TH", chars=[],
-                                     page=(keys[0][0] if keys else (_first_page(cell) or page or 0)))
+                                     page=(keys[0][0] if keys else (_first_page(cell) or page or 0)),
+                                     tag_colspan=_span(attrs.get("ColSpan")),
+                                     tag_rowspan=_span(attrs.get("RowSpan")))
                             )
                         table_rows.append(cells)
                     self.tables.append(
@@ -961,13 +1458,16 @@ class TaggedPdfConverter:
         Characters inside tagged table cells are filed under their cell; untagged characters are
         page furniture and dropped.
         """
-        flow, table_owned = [], []
+        flow, table_owned, made = [], [], []
+        previous: Optional[dict] = None
         for raw in page.chars:
-            mcid = raw.get("mcid")
+            mcid = run_mcid(raw, previous)
+            previous = dict(raw, mcid=mcid) if mcid is not None else None
             if mcid is None:
                 continue
             owner = self.owner.get((number, mcid))
             ch = make_char(raw, owner, number)
+            made.append(ch)
             key = self.cell_of.get((number, mcid))
             if key is not None:
                 t, r, c = key
@@ -977,6 +1477,8 @@ class TaggedPdfConverter:
                 table_owned.append(ch)
             else:
                 flow.append(ch)
+        mark_links(page, made)
+        mark_underlines(page, made)
         return flow, table_owned
 
     def _adopt_orphans(self, chars: list[Ch], number: int, borders: "PageBorders") -> list[Ch]:
@@ -1044,11 +1546,26 @@ class TaggedPdfConverter:
         in_margin = image["bottom"] <= 0.12 * page.height or image["top"] >= 0.88 * page.height
         return in_margin or self._image_repeats[self._image_key(image)] >= 3
 
+    @staticmethod
+    def _has_prose(page: Any, box: tuple[float, float, float, float]) -> bool:
+        """Does a line of running text (six words or more) lie inside the area? Labels on a diagram are
+        shorter."""
+        text = page.crop(box, strict=False).extract_text() or ""
+        return any(len(line.split()) >= 6 for line in text.split("\n"))
+
+    def _too_small(self, width: float, height: float) -> bool:
+        """A picture too small to be content: a bullet, a spacer, or a rule (a hairline wider than it is tall).
+        A short side under the minimum is not enough: a 30 x 15 pt "Rx only" mark is a symbol."""
+        short, long = min(width, height), max(width, height)
+        if short >= self.min_image_size:
+            return False
+        return short < 4 or width * height < 150 or long > 4 * short
+
     def _page_images(self, page: Any, number: int) -> list[Block]:
         found = []
         for image in page.images:
             width, height = image["x1"] - image["x0"], image["bottom"] - image["top"]
-            if min(width, height) < self.min_image_size or self._is_furniture_image(image, page):
+            if self._too_small(width, height) or self._is_furniture_image(image, page):
                 continue
             found.append(
                 Block(kind="image", page=number, top=image["top"], bottom=image["bottom"],
@@ -1056,7 +1573,57 @@ class TaggedPdfConverter:
                       payload=(page, (image["x0"], image["top"], image["x1"], image["bottom"]),
                                image))
             )
+        covered = [b.payload[1] for b in found]
+        for box in self._vector_regions.get(number, []):
+            if self._vector_repeats[tuple(round(v) for v in box)] >= 3:
+                continue
+            if any(c[0] - 2 <= box[0] and c[1] - 2 <= box[1] and c[2] + 2 >= box[2] and c[3] + 2 >= box[3] for c in covered):
+                continue  # drawn over a picture already kept
+            if self._has_prose(page, box):
+                continue  # a bar or box with sentences in it (an icon beside a banner), not a drawing
+            x0, top, x1, bottom = box
+            found.append(Block(kind="image", page=number, top=top, bottom=bottom, x0=x0, x1=x1,
+                               payload=(page, (x0, top, x1, bottom), {})))
         return found
+
+    @staticmethod
+    def _take_picture_text(flow: list[Ch], images: list[Block], page: Any, number: int = 0) -> tuple[list[Ch], list[Table]]:
+        """Labels drawn on or beside a diagram (a legend, call-out numbers, part names) are part of the
+        picture, not body text: they would otherwise land in the flow around it and between it and its
+        caption. Short text wholly inside a picture, or short lines level with a tall picture and just
+        beside it, are taken out of the flow and kept as the picture's description. Text beside it that is
+        laid out as a grid (a legend of numbers and names) is a table, and is returned as one."""
+        legends: list[Table] = []
+        for image in images:
+            x0, top, x1, bottom = image.payload[1]
+            if (x1 - x0) * (bottom - top) > 0.5 * page.width * page.height:
+                continue
+            inside = [c for c in flow if c.x0 >= x0 - 1 and c.x1 <= x1 + 1 and c.top >= top - 1 and c.bottom <= bottom + 1]
+            lines = [ln for ln in group_lines(inside) if not ln.blank]
+            words = sum(len(_line_text(ln).split()) for ln in lines)
+            if lines and words <= 80 and max(len(_line_text(ln).split()) for ln in lines) <= 14:
+                taken = {id(c) for c in inside}  # prose over a background picture is text, and is left
+                flow = [c for c in flow if id(c) not in taken]
+                image.units = join_units(lines)
+            if bottom - top < 70:
+                continue
+            reach = 250
+            beside = [c for c in flow if top <= (c.top + c.bottom) / 2 <= bottom
+                      and (x1 - 1 <= c.x0 <= x1 + reach or x0 - reach <= c.x1 <= x0 + 1)]
+            grid = text_grid(beside, number)
+            if grid is not None:
+                taken = {id(c) for c in beside}
+                flow = [c for c in flow if id(c) not in taken]
+                grid.top = image.top + 0.5  # read after the picture, not before it
+                legends.append(grid)
+                continue
+            near = [ln for ln in group_lines(beside) if not ln.blank]
+            if near and sum(len(_line_text(ln).split()) for ln in near) <= 30 \
+                    and max(len(_line_text(ln).split()) for ln in near) <= 8:
+                taken = {id(c) for c in beside}
+                flow = [c for c in flow if id(c) not in taken]
+                image.units = _collapse_spaces(image.units + ([(" ", None)] if image.units else []) + join_units(near))
+        return flow, legends
 
     def _native_image(self, number: int, bbox: tuple[float, float, float, float], image: dict,
                       stem: Path) -> Optional[Path]:
@@ -1074,6 +1641,7 @@ class TaggedPdfConverter:
         if "SMask" in attrs:
             soft = resolve1(attrs["SMask"])
             data = soft.get_data()
+            data = mask_values(data, [resolve1(v) for v in (resolve1(soft.attrs.get("Decode")) or [])])
             if data and min(data) < 255:  # a transparent picture: carry its mask over as alpha
                 width, height = resolve1(soft.attrs.get("Width")), resolve1(soft.attrs.get("Height"))
                 if not width or not height or len(data) != width * height:
@@ -1207,6 +1775,8 @@ class TaggedPdfConverter:
         seq: list[Block] = []
         for number, page in enumerate(self.pdf.pages, 1):
             chars = [make_char(raw, None, number) for raw in page.chars]
+            mark_links(page, chars)
+            mark_underlines(page, chars)
             dropped = {
                 id(c) for line in group_lines(chars)
                 if (re.sub(r"\d+", "#", _line_text(line).lower()), round(line.top / 4)) in furniture
@@ -1214,17 +1784,23 @@ class TaggedPdfConverter:
             }
             chars = [c for c in chars if id(c) not in dropped]
             tables, flow = self._layout_tables(page, number, chars)
+            images = self._page_images(page, number)
+            flow, legends = self._take_picture_text(flow, images, page, number)
+            tables += legends
+            flow, labels = take_margin_labels(flow)
             lines = [ln for ln in group_lines(flow) if not self._skip(plain(line_units(ln)))]
             wide = [ln.x1 for ln in lines if len(_line_text(ln)) >= 50]
             blocks = flow_blocks(lines, layout=True, right_edge=max(wide, default=0.0), pitch=_line_pitch(lines))
-            items = blocks + self._page_images(page, number)
+            blocks += assign_callouts(blocks, labels, PageBorders(page).horizontal, self._callouts)
+            self._callouts += len(labels)
+            items = blocks + images
             for table in tables:
                 self.tables.append(table)
                 items.append(Block(kind="table", page=number, top=table.top, bottom=table.top,
                                    payload=len(self.tables) - 1))
             items.sort(key=lambda b: b.top)
             seq.extend(items)
-        return self._merge_pages_layout(seq)
+        return self._merge_tables(self._merge_pages_layout(seq))
 
     def _merge_pages_layout(self, seq: list[Block]) -> list[Block]:
         """An untagged paragraph that runs over a page break: it stops near the foot of a page without
@@ -1262,25 +1838,81 @@ class TaggedPdfConverter:
         for number, page, flow, owned in pages:
             borders = PageBorders(page)
             flow += self._adopt_orphans(owned, number, borders)
+            images = self._page_images(page, number)
+            flow, legends = self._take_picture_text(flow, images, page, number)
+            self.tables.extend(legends)
             for table in self.tables:
                 for row in table.rows:
                     for cell in row:
                         if cell.page == number and cell.chars and cell.rect is None:
                             cell.rect = borders.around(cell.chars)
 
+            flow, labels = take_margin_labels(flow)
             lines = [ln for ln in group_lines(flow) if not self._skip(plain(line_units(ln)))]
             blocks = flow_blocks(lines)
-            items = blocks + self._page_images(page, number)
+            blocks += assign_callouts(blocks, labels, borders.horizontal, self._callouts)
+            self._callouts += len(labels)
+            items = blocks + images
             for t, table in enumerate(self.tables):
                 if number in table.pages:
                     tops = [c.top for row in table.rows for cell in row if cell.page == number
                             for c in cell.chars if c.text.strip()]
                     if tops:
-                        items.append(Block(kind="table", page=number, top=min(tops),
+                        items.append(Block(kind="table", page=number, top=table.top if table.legend else min(tops),
                                            bottom=max(tops), payload=t))
             items.sort(key=lambda b: b.top)
-            seq.extend(items)
-        return self._merge_pages(seq)
+            seq.extend(self._structure_order(items))
+        return self._merge_tables(self._merge_pages(seq))
+
+    @staticmethod
+    def _structure_order(items: list[Block]) -> list[Block]:
+        """Paragraphs set side by side (the two columns of a record, say) come out row by row when ordered by
+        position, so a pair is read across and the sentences of a column are split up. The tags give the
+        order the author meant: where a run of paragraphs is in columns and not in tag order, it follows the
+        tags."""
+        def in_columns(run: list[Block]) -> bool:
+            return any(a.x1 + 20 <= b.x0 and a.top < b.bottom and b.top < a.bottom for a in run for b in run)
+
+        out: list[Block] = []
+        run: list[Block] = []
+
+        def flush() -> None:
+            owners = [b.owner for b in run]
+            if len(run) > 1 and owners != sorted(owners) and in_columns(run):
+                run.sort(key=lambda b: b.owner)
+            out.extend(run)
+            run.clear()
+
+        for block in items:
+            if block.kind == "para" and block.owner is not None:
+                run.append(block)
+            else:
+                flush()
+                out.append(block)
+        flush()
+        return out
+
+    def _merge_tables(self, seq: list[Block]) -> list[Block]:
+        """A table that carries on over a page break is one table: the part on the next page, with the
+        header the PDF repeats there, joins it. The repeated header is dropped when the table is written."""
+        merged: list[Block] = []
+        for block in seq:
+            previous = merged[-1] if merged else None
+            if (block.kind == "table" and previous is not None and previous.kind == "table"
+                    and block.payload != previous.payload):
+                first, second = self.tables[previous.payload], self.tables[block.payload]
+                if _continues(first, second, self.pdf.pages[second.first_page - 1].height):
+                    shift = _x_edges(first)[0] - _x_edges(second)[0]
+                    for row in second.rows:  # into line with the first part, so the columns are one set
+                        for cell in row:
+                            if cell.rect:
+                                cell.rect = (cell.rect[0] + shift, cell.rect[1], cell.rect[2] + shift, cell.rect[3])
+                    first.rows += second.rows
+                    first.pages |= second.pages
+                    second.emitted = True
+                    continue
+            merged.append(block)
+        return merged
 
     @staticmethod
     def _merge_pages(seq: list[Block]) -> list[Block]:
@@ -1304,6 +1936,11 @@ class TaggedPdfConverter:
         headings = Headings()
         page_mid = {n: p.width / 2 for n, p in enumerate(self.pdf.pages, 1)}
         left_margin = min((b.x0 for b in seq if b.kind == "para" and len(b.lines) > 2), default=72.0)
+        # Facing pages mirror their margins, so "indented" is judged against the margin of the page itself.
+        page_margin: dict[int, float] = {}
+        for b in seq:
+            if b.kind == "para" and len(b.lines) >= 2:
+                page_margin[b.page] = min(page_margin.get(b.page, b.x0), b.x0)
         sizes: collections.Counter[int] = collections.Counter()
         for b in seq:
             if b.kind == "para":
@@ -1318,6 +1955,20 @@ class TaggedPdfConverter:
             tag = self.owner_kind.get(block.owner) if block.owner is not None else None
             if tag in ("TOC", "TOCI"):
                 self.has_toc = True
+                own = _LIST_TITLE_RE.match(plain(block.units).strip())
+                if own:  # a producer may tag the title of a list of tables as one of its entries
+                    block.listof = "table" if own.group("what").lower() == "tables" else "figure"
+                    out.append(block)
+                    continue
+                # The entries are dropped (the contents are rebuilt from the headings), and so is the title
+                # that stood over them, or it would head an empty list.
+                if out and out[-1].kind in ("heading", "para") and len(out[-1].lines) <= 2:
+                    title = plain(out[-1].units).strip()
+                    listed = _LIST_TITLE_RE.match(title)
+                    if _CONTENTS_TITLE_RE.match(title):
+                        out.pop()
+                    elif listed:  # kept: the list is written again from the captions
+                        out[-1].listof = "table" if listed.group("what").lower() == "tables" else "figure"
                 continue
             if tag and tag.startswith("H"):
                 block.kind = "heading"
@@ -1325,23 +1976,24 @@ class TaggedPdfConverter:
                 block.payload = "tag"
                 out.append(block)
                 continue
-            found = headings.classify(block)
+            found = headings.classify(block) if block.callout is None else None
             if found:
                 kind, text = found
                 block.kind, block.level = "heading", headings.level(kind)
                 out.append(block)
                 continue
             centred = all(abs((ln.x0 + ln.x1) / 2 - page_mid[block.page]) <= 8 for ln in block.lines)
-            if (self.layout and not centred and bold_share(block.units) >= 0.9 and len(block.lines) <= 2
+            if (self.layout and not centred and block.callout is None and bold_share(block.units) >= 0.9 and len(block.lines) <= 2
                     and len(plain(block.units)) <= 120 and block.size >= 1.1 * body_size):
                 # An untagged heading: bold and larger than the text. Its level follows its size.
                 block.kind, block.payload = "heading", "size"
                 out.append(block)
                 continue
-            if centred and block.x0 - left_margin > 30:
+            if centred and block.callout is None and block.x0 - page_margin.get(block.page, left_margin) > 30 and not parse_label(plain(block.units)):
                 block.kind = "center"
                 out.append(block)
                 continue
+            callout_in_text(block)
             label = parse_label(plain(block.units))
             if label and label.kind != "bullet" and block.size < 0.85 * body_size:
                 # Footnotes and table notes keep their label as text instead of joining the list outline.
@@ -1367,7 +2019,55 @@ class TaggedPdfConverter:
                 previous.units += [("\n", None)] + block.units
                 continue
             joined.append(block)
-        return joined
+        return self._group_callouts(self._absorb_continuations(joined))
+
+    def _absorb_continuations(self, seq: list[Block]) -> list[Block]:
+        """A callout opened by its own label ("Notice: ...") goes on over the lines straight under it, in
+        the same column and type size, whatever the tags make of them: Chrome tags each line of a wrapped
+        sentence apart, so the second line would otherwise be a paragraph on its own. They join its text."""
+        out: list[Block] = []
+        taken: set[int] = set()
+        for i, block in enumerate(seq):
+            if id(block) in taken:
+                continue
+            out.append(block)
+            if block.kind != "para" or not block.callout_inline or block.label:
+                continue
+            last = block
+            for later in seq[i + 1:]:
+                if (later.kind != "para" or later.callout is not None or later.label or later.page != last.page
+                        or abs(later.x0 - block.x0) > 2 or abs(later.size - block.size) > 0.6
+                        or not 0 <= later.top - last.lines[-1].baseline <= 0.9 * later.size
+                        or bold_share(later.units) >= 0.9):
+                    break
+                block.lines += later.lines
+                block.units = _collapse_spaces(block.units + [(" ", None)] + later.units)  # keeps the label cut off
+                block.bottom, block.x1 = later.bottom, max(block.x1, later.x1)
+                taken.add(id(later))
+                last = later
+        return out
+
+    @staticmethod
+    def _group_callouts(seq: list[Block]) -> list[Block]:
+        """The paragraphs of one callout box become one block that holds them. Where the text says
+        "Important:" itself, that is the kind, whatever the margin label beside it said."""
+        out: list[Block] = []
+        for block in seq:
+            if block.kind != "para" or block.callout is None:
+                out.append(block)
+                continue
+            group, kind = block.callout
+            previous = out[-1] if out else None
+            if previous is not None and previous.kind == "admon" and group >= 0 and previous.payload[2] == group:
+                previous.payload[1].append(block)
+                previous.bottom, previous.x0 = block.bottom, min(previous.x0, block.x0)
+                previous.x1 = max(previous.x1, block.x1)
+                if block.callout_inline:
+                    previous.payload[0], previous.payload[3] = kind, block.callout_word
+                continue
+            out.append(Block(kind="admon", page=block.page, top=block.top, bottom=block.bottom, x0=block.x0,
+                             x1=block.x1, size=block.size, payload=[kind, [block], group, block.callout_word]))
+        return out
 
     # -- rendering ---------------------------------------------------------------
 
@@ -1391,6 +2091,8 @@ class TaggedPdfConverter:
                 parts.append((f"* {render_units(block.units, bold=not cell.header)}", True))
             else:
                 parts.append((render_units(block.units, bold=not cell.header), False))
+        for picture in cell.pictures:
+            parts.append((self._inline_picture(picture), False))
         rich = any(is_bullet for _, is_bullet in parts)
         text = ""
         for i, (piece, is_bullet) in enumerate(parts):
@@ -1401,26 +2103,38 @@ class TaggedPdfConverter:
 
     @staticmethod
     def _alignment(cell: Cell, rect: Optional[tuple[float, float, float, float]]) -> str:
+        """"^" centred, ">" right, "" left, or "?" when the text fills its cell and says nothing about
+        alignment (a line with under 8 pt to spare on both sides fits any of them)."""
         lines = [ln for ln in group_lines(cell.chars) if not ln.blank]
         if not lines or rect is None:
             return ""
         left, right = rect[0], rect[2]
         middle = (left + right) / 2
-        slack = [(ln.x0 - left, right - ln.x1) for ln in lines]
-        if all(a >= 4 and b >= 4 for a, b in slack) and all(
-            abs((ln.x0 + ln.x1) / 2 - middle) <= 3 for ln in lines
-        ):
+        slack = [(ln, ln.x0 - left, right - ln.x1) for ln in lines]
+        evidence = [(ln, a, b) for ln, a, b in slack if a >= 8 or b >= 8]
+        if not evidence:
+            return "?"
+        if all(a >= 8 and b >= 8 and abs((ln.x0 + ln.x1) / 2 - middle) <= 3 for ln, a, b in evidence):
             return "^"
-        if all(b <= 4 and a >= 10 for a, b in slack):
+        if all(b <= 4 and a >= 10 for ln, a, b in evidence):
             return ">"
         return ""
 
     def _render_table(self, table: Table, page_width: float) -> str:
-        if not _assign_grid(table):
-            _pad_rows(table)
-            note = "// Cell spans could not be recovered from the page borders; row layout may differ.\n"
+        _drop_repeated_headers(table)
+        note = ""
+        stated = any(c.tag_colspan > 1 or c.tag_rowspan > 1 for row in table.rows for c in row)
+        saved = [[dataclasses.replace(c, chars=list(c.chars)) for c in row] for row in table.rows]
+        if stated and _grid_from_tags(table):
+            pass  # the tags say how the cells span
         else:
-            note = ""
+            if stated:
+                table.rows[:] = [[dataclasses.replace(c, chars=list(c.chars)) for c in row] for row in saved]
+            if not _assign_grid(table):
+                table.rows[:] = saved
+                if not _grid_from_tags(table):
+                    _pad_rows(table)
+                    note = "// Cell spans could not be recovered from the page borders; row layout may differ.\n"
         known = [c for row in table.rows for c in row if c.rect]
         x_edges = _cluster(x for c in known for x in (c.rect[0], c.rect[2])) if known else []
         ncols = max(len(x_edges) - 1, max(sum(c.colspan for c in row) for row in table.rows))
@@ -1432,7 +2146,7 @@ class TaggedPdfConverter:
             for cell in row:
                 text, rich = self._render_cell(cell)
                 align = self._alignment(cell, cell.rect)
-                if cell.colspan == 1 and cell.col < ncols and cell.chars:
+                if cell.colspan == 1 and cell.col < ncols and cell.chars and align != "?":
                     aligns[cell.col][align] += 1
                 cells.append((cell, text, rich, align))
             rendered.append(cells)
@@ -1447,8 +2161,13 @@ class TaggedPdfConverter:
         else:
             attrs = [f'cols="{ncols}*"']
         first = table.rows[0]
-        if first and all(c.header for c in first):
+        # Only the first row can be the AsciiDoc header, and a span cannot cross out of it: a header with a
+        # cell spanning down (a two-row header) keeps its header cells as row headers instead.
+        if first and all(c.header for c in first) and all(c.rowspan == 1 for c in first):
             attrs.append("options=header")
+        else:
+            # Without this Asciidoctor takes the first row, which our blank lines set apart, as a header row
+            attrs.append("options=noheader")
         lines = [f"[{','.join(attrs)}]", "|==="]
         for r, cells in enumerate(rendered):
             header_row = r == 0 and "options=header" in attrs
@@ -1462,6 +2181,8 @@ class TaggedPdfConverter:
                 if prefix:
                     prefix += "+"
                 column = column_align[cell.col] if cell.col < ncols else ""
+                if align == "?":
+                    align = column if cell.colspan == 1 else ""
                 if cell.colspan > 1 or align != column:
                     prefix += align
                 if rich:
@@ -1520,6 +2241,42 @@ class TaggedPdfConverter:
             parts.append(escape(" ".join(table.below)))
         return parts
 
+    def _inline_picture(self, block: Block) -> str:
+        """A picture inside a table cell, as an inline image."""
+        page, bbox, image = block.payload
+        ref = self._write_image(block.page, page, bbox, image)
+        if ref is None:
+            return ""
+        alt = f"Picture on page {block.page}"
+        if block.units:
+            alt += ". Text in the picture: " + plain(block.units)
+        alt = alt.replace('"', "'").replace("]", ")").replace("\\", "/").replace("|", "/")
+        self.pictures_kept += 1
+        return f'image:{ref}["{alt}",width={round((bbox[2] - bbox[0]) * 96 / 72)}]'
+
+    def _pictures_into_cells(self, seq: list[Block]) -> list[Block]:
+        """A picture drawn inside a table cell (a symbol in a legend, say) belongs to the cell. The text it
+        carries (a "CC" in the symbol) moves from the cell to the picture's description."""
+        out: list[Block] = []
+        for block in seq:
+            if block.kind != "image":
+                out.append(block)
+                continue
+            x0, top, x1, bottom = block.payload[1]
+            cx, cy = (x0 + x1) / 2, (top + bottom) / 2
+            home = next((c for t in self.tables if block.page in t.pages for row in t.rows for c in row
+                         if c.page == block.page and c.rect and c.rect[0] <= cx <= c.rect[2]
+                         and c.rect[1] <= cy <= c.rect[3]), None)
+            if home is None:
+                out.append(block)
+                continue
+            inside = [c for c in home.chars if x0 - 1 <= (c.x0 + c.x1) / 2 <= x1 + 1 and top - 1 <= (c.top + c.bottom) / 2 <= bottom + 1]
+            if inside:
+                home.chars = [c for c in home.chars if c not in inside]
+                block.units = join_units([ln for ln in group_lines(inside) if not ln.blank])
+            home.pictures.append(block)
+        return out
+
     def _render_image(self, block: Block) -> list[str]:
         """AsciiDoc blocks for a picture: an OCR table when it is a ruled table, else the picture."""
         page, bbox, image = block.payload
@@ -1534,7 +2291,11 @@ class TaggedPdfConverter:
         if transcription is not None:
             return transcription
         self.pictures_kept += 1
-        return [f"{note}image::{ref}[Picture on page {block.page},width={width}]"]
+        alt = f"Picture on page {block.page}"
+        if block.units:
+            alt += ". Text in the picture: " + plain(block.units)
+        alt = alt.replace('"', "'").replace("]", ")").replace("\\", "/")
+        return [f'{note}image::{ref}["{alt}",width={width}]']
 
     # -- lists -------------------------------------------------------------------
 
@@ -1565,7 +2326,13 @@ class TaggedPdfConverter:
                 # a label line followed by its value: keep them together with a hard line break
                 chunk[-1] += f" +\n{text}"
             else:
-                chunk.extend(["+", text])
+                # Comment lines (an OCR table's notes) stay above the "+": after it, a comment ends the list
+                # item's attachment and the "+" that follows the block is printed as text.
+                lines = text.split("\n")
+                top = 0
+                while top < len(lines) - 1 and lines[top].startswith("//"):
+                    top += 1
+                chunk.extend(lines[:top] + ["+", "\n".join(lines[top:])])
             item_open = False
 
         for i, block in enumerate(seq):
@@ -1601,6 +2368,13 @@ class TaggedPdfConverter:
                 out.append(text)
                 continue
 
+            if block.kind == "listof":
+                flush()
+                levels.clear()
+                out.append("\n".join(f"* xref:{slug}[{(label + title).replace(']', chr(92) + ']')}]"
+                                    for label, slug, title in block.payload))
+                continue
+
             if block.kind == "center":
                 flush()
                 levels.clear()
@@ -1616,9 +2390,14 @@ class TaggedPdfConverter:
                 if table.emitted:
                     continue
                 table.emitted = True
-                text = self._render_table(table, self.pdf.pages[block.page - 1].width)
+                text = self._titled(self._render_table(table, self.pdf.pages[block.page - 1].width), block.caption)
+            elif block.kind == "admon":
+                text = self._render_callout(block)
             else:  # image
-                for part in self._render_image(block):
+                parts = self._render_image(block)
+                at = next((k for k, part in enumerate(parts) if "|===" in part), len(parts) - 1)  # not the notes
+                parts[at] = self._titled(parts[at], block.caption)
+                for part in parts:
                     if levels:
                         attach(part)
                     else:
@@ -1632,6 +2411,120 @@ class TaggedPdfConverter:
                 out.append(text)
         flush()
         return out
+
+    def _table_end(self, block: Block) -> tuple[int, float]:
+        """The last page a table is on and where it ends there."""
+        table = self.tables[block.payload]
+        page = max(table.pages)
+        bottoms = [c.rect[3] if c.rect else max((ch.bottom for ch in c.chars), default=0.0)
+                   for row in table.rows for c in row if c.page == page]
+        return page, max(bottoms, default=block.bottom)
+
+    def _attach_captions(self, seq: list[Block]) -> list[Block]:
+        """A caption ("Table 6. ...", "Figure 2: ...") next to its table or picture becomes the block title
+        of that table or picture, wherever the producer set it: above for tables, below for pictures, most
+        often. The title keeps the label ("Table 6. ...") so the numbers stay those of the document, and the
+        block gets an anchor for cross references."""
+        def reach(block: Block, side: str) -> Optional[tuple[int, float]]:
+            """(page, edge) of a table or picture on the given side facing the caption."""
+            if side == "after":  # the block sits after the caption: its top edge
+                return (block.page, block.top)
+            if block.kind == "table":
+                return self._table_end(block)
+            return (block.page, block.bottom)
+
+        out: list[Block] = []
+        taken: set[int] = set()
+        for i, block in enumerate(seq):
+            if block.kind not in ("para", "center") or block.callout is not None or len(block.lines) > 3:
+                out.append(block)
+                continue
+            text = plain(block.units).strip()
+            match = _CAPTION_RE.match(text)
+            styled = bold_share(block.units) >= 0.9 or all(s is not None and s[1] for _, s in block.units if s) \
+                or block.kind == "center" or self.owner_kind.get(block.owner) == "Caption"
+            if not match or not styled:
+                out.append(block)
+                continue
+            first = match.group("word") == "Table"
+            def clear(j: int, step: int) -> int:
+                """Past a legend table: it belongs to the picture, which the caption is for."""
+                while 0 <= j < len(seq) and not first and seq[j].kind == "table" and self.tables[seq[j].payload].legend:
+                    j += step
+                return j
+
+            options = [("after", i + 1), ("before", i - 1)] if first else [("before", clear(i - 1, -1)), ("after", clear(i + 1, 1))]
+            partner = None
+            for side, j in options:
+                if not 0 <= j < len(seq) or j in taken or seq[j].kind not in ("table", "image") \
+                        or seq[j].caption is not None:
+                    continue
+                page, edge = reach(seq[j], side)
+                near = (edge - block.bottom) if side == "after" else (block.top - edge)
+                if page == block.page and -4 <= near <= 48:
+                    partner = (side, j)
+                    break
+            if partner is None:
+                out.append(block)
+                continue
+            seen, cut = 0, 0
+            for cut, (unit, _) in enumerate(block.units, 1):
+                seen += len(unit)
+                if seen >= match.start("title"):
+                    break
+            # A caption set wholly in bold or italic is the title's own style; italic inside it is emphasis
+            whole_italic = all(st[1] for _, st in block.units if st)
+            title = [(t, (False, bool(st[1]) and not whole_italic, st[2]) if st else None)
+                     for t, st in block.units[cut:]]
+            label = f"{match.group('label')} "
+            slug = f"{'figure' if match.group('word') in ('Figure', 'Fig.') else match.group('word').lower()}-" \
+                   + re.sub(r"[^a-z0-9]+", "-", match.group("number").lower()).strip("-")
+            seq[partner[1]].caption = (label, slug, render_units(title, bold=False))
+            taken.add(partner[1])
+        return out
+
+    @staticmethod
+    def _resolve_lists(seq: list[Block]) -> list[Block]:
+        """A "Table of Tables" or "Table of Figures" is written again from the captions of the document, as
+        cross references, so it stays right whatever the page numbers do. With no caption of its kind to
+        list, the title is dropped with its entries."""
+        out: list[Block] = []
+        for block in seq:
+            if not block.listof:
+                out.append(block)
+                continue
+            entries = [b for b in seq if b.caption and b.caption[1].startswith(block.listof + "-")]
+            if not entries:
+                continue
+            out.append(block)
+            out.append(Block(kind="listof", page=block.page, top=block.bottom + 0.1, bottom=block.bottom + 0.1,
+                             payload=[b.caption for b in entries]))
+        return out
+
+    def _titled(self, text: str, caption: Optional[tuple[str, str, str]]) -> str:
+        """The block text with its title lines in front of the block itself (after any comment lines). The
+        label is part of the title text, so the document turns off Asciidoctor's own numbering."""
+        if caption is None:
+            return text
+        label, slug, title = caption
+        self._captioned.add("figure" if slug.startswith("figure-") else "table" if slug.startswith("table-") else "")
+        lines = text.split("\n")
+        top = 0
+        while top < len(lines) - 1 and lines[top].startswith("//"):
+            top += 1
+        head = [f"[[{slug}]]", f".{label}{title}"]
+        return "\n".join(lines[:top] + head + lines[top:])
+
+    def _render_callout(self, block: Block) -> str:
+        """A callout as an admonition: one line for a single paragraph, a delimited block for several
+        paragraphs or a list. A label the admonition has no name for ("Notice") is kept as its caption."""
+        kind, members, _, word = block.payload
+        body = self._join(self._emit(members))
+        caption = word.capitalize() if word and word.lower() not in ("note", "tip", "important", "warning", "caution") else ""
+        style = f'{kind},caption="{caption}"' if caption else kind
+        if len(members) == 1 and not members[0].label and "\n" not in body:
+            return f"[{style}]\n{body}" if caption else f"{kind}: {body}"
+        return f"[{style}]\n====\n{body}\n===="
 
     @staticmethod
     def _split_center(block: Block) -> list[list[Unit]]:
@@ -1679,14 +2572,7 @@ class TaggedPdfConverter:
 
     def _left_of_list(self, block: Block, levels: list[dict]) -> bool:
         """A table or picture that starts left of the list's own labels is not part of the list."""
-        if block.kind == "table":
-            table = self.tables[block.payload]
-            xs = [c.rect[0] for row in table.rows for c in row if c.rect]
-            xs = xs or [ch.x0 for row in table.rows for c in row for ch in c.chars if ch.text.strip()]
-            x0 = min(xs, default=block.x0)
-        else:
-            x0 = block.x0
-        return x0 < levels[0]["label_x"] - _INDENT_TOL
+        return block.x0 < levels[0]["label_x"] - _INDENT_TOL  # a table block's x0 is its left edge, set by _align_margins
 
     def _belongs_to_list(self, seq: list[Block], index: int, levels: list[dict]) -> bool:
         """Is this paragraph part of the open list item, rather than text after the list?"""
@@ -1728,16 +2614,73 @@ class TaggedPdfConverter:
         finally:
             self.close()
 
+    def _align_margins(self, seq: list[Block]) -> None:
+        """Indents are compared across pages, and facing pages have mirrored margins (a list item at 54 pt on
+        one page is at 72 pt on the next). When odd and even pages keep to two different left margins, shift
+        the blocks of the even pages onto the odd pages' margin."""
+        for block in seq:
+            if block.kind == "table":
+                table = self.tables[block.payload]
+                xs = [c.rect[0] for row in table.rows for c in row if c.rect]
+                xs = xs or [ch.x0 for row in table.rows for c in row for ch in c.chars if ch.text.strip()]
+                block.x0 = min(xs, default=block.x0)
+        margins: dict[int, list[float]] = collections.defaultdict(list)  # page parity -> the leftmost text of each page
+        for page in sorted({b.page for b in seq}):
+            # headings, tables and paragraphs of two lines or more: a one-line callout label sits in the margin
+            edges = [b.x0 for b in seq if b.page == page
+                     and (b.kind in ("heading", "table") or (b.kind == "para" and len(b.lines) >= 2))]
+            if edges:
+                margins[page % 2].append(min(edges))
+        if len(margins) < 2 or min(len(v) for v in margins.values()) < 2:
+            return
+        middle = {parity: statistics.median(values) for parity, values in margins.items()}
+        steady = all(
+            sum(1 for v in values if abs(v - middle[parity]) <= 3) >= 0.6 * len(values)
+            for parity, values in margins.items()
+        )
+        if not steady or abs(middle[0] - middle[1]) < 6:
+            return
+        shift_even = middle[0] - middle[1]
+        held = [m for b in seq if b.kind == "admon" for m in b.payload[1]]  # the paragraphs inside callouts
+        for block in [*seq, *held]:
+            if block.page % 2:
+                continue
+            block.x0 -= shift_even
+            if block.kind == "table":
+                continue
+            block.x1 -= shift_even
+            if block.label:
+                block.label_x -= shift_even
+                block.content_x -= shift_even
+
+    def _join(self, body: list[str]) -> str:
+        """The written blocks as one text: blank lines between blocks, none between the items of a list."""
+        text = ""
+        for i, piece in enumerate(body):
+            # List items follow each other directly; a list attribute line such as [lowerroman] needs a
+            # blank line before it, or it would be read as part of the paragraph above.
+            # A list item that follows an item with attached blocks needs a blank line: after an attached
+            # paragraph, the next marker would be read as more text of that paragraph and end the list.
+            tight = (piece.startswith(self.LIST) and body[i - 1].startswith(self.LIST)
+                     and not piece.startswith(self.LIST + "[") and "\n+\n" not in body[i - 1])
+            glue = "" if i == 0 else ("\n" if tight else "\n\n")
+            text += glue + piece.removeprefix(self.LIST)
+        return text
+
     def _convert(self) -> str:
         self.has_toc = False
-        seq = self._classify(self._sequence())
+        seq = self._pictures_into_cells(self._resolve_lists(self._attach_captions(self._classify(self._sequence()))))
+        self._align_margins(seq)
         if self.layout:
             self._cover_title(seq)
-        # A single H1 ahead of every other heading is the document title.
+        # A single H1 ahead of every other heading, and ahead of any text, is the document title. With text
+        # before it (a page banner, say) it is a heading where it stands, and the title comes from the PDF's
+        # own metadata: lifting it to the top would pull it away from what is set beside it.
         tagged = [b for b in seq if b.kind == "heading" and b.payload == "tag"]
         if tagged and tagged[0].level == 2 and sum(1 for b in tagged if b.level == 2) == 1 \
                 and seq.index(tagged[0]) < next((i for i, b in enumerate(seq) if b.kind == "heading"
-                                                  and b is not tagged[0]), len(seq)):
+                                                  and b is not tagged[0]), len(seq)) \
+                and not any(b.kind in ("para", "admon", "table", "center") for b in seq[:seq.index(tagged[0])]):
             self.title = plain(tagged[0].units)
             seq.remove(tagged[0])
             tagged = tagged[1:]
@@ -1776,14 +2719,9 @@ class TaggedPdfConverter:
             if not any(c.chars for row in table.rows for c in row):
                 table.emitted = True
         body = self._emit(seq)
-        text = ""
-        for i, piece in enumerate(body):
-            # List items follow each other directly; a list attribute line such as [lowerroman] needs a
-            # blank line before it, or it would be read as part of the paragraph above.
-            tight = piece.startswith(self.LIST) and body[i - 1].startswith(self.LIST) and not piece.startswith(self.LIST + "[")
-            glue = "" if i == 0 else ("\n" if tight else "\n\n")
-            text += glue + piece.removeprefix(self.LIST)
+        text = self._join(body)
         header = f"= {self.title}\n" + (":toc:\n" if self.has_toc else "")
+        header += "".join(f":{kind}-caption!:\n" for kind in ("figure", "table") if kind in self._captioned)
         if self.pictures_kept:
             reason = (
                 "OCR is off" if not self.ocr

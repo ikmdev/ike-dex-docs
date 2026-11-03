@@ -60,6 +60,50 @@ Both engines take bold, italic, superscript and subscript from fonts and baselin
 table spans, column widths and alignment from the drawn cell borders (tags carry no spans).
 Running headers, footers and page numbers are dropped (`--ignore REGEX` adds more).
 
+**Tables over a page break** are one AsciiDoc table: a part with the same columns that repeats the
+header (or starts at the top of the page where the last ended) joins the one above, and a header row
+repeated inside a table is written once, as the first row with `options=header`. The rendered PDF
+repeats that header on every page again. A header with a cell spanning down (a two-row header) cannot be
+the AsciiDoc header row, so its cells become row headers (`h`). Where the tags state spans (a Chrome
+export does) they are used when the page borders do not explain the cells.
+
+**Callouts** (both engines) become admonitions. A bold "Note", "Important", "Warning", "Caution" or "Tip"
+set in the margin beside a box (taken out before lines are grouped, since it would join the lines above and
+below it) marks the paragraphs between the rules above and below it, or else the paragraph beside it;
+a paragraph that opens with "Note:" does too. One paragraph is written `NOTE: text`; several, or a
+list, a `[NOTE]` block between `====` lines.
+
+**Captions** ("Table 6. ...", "Figure 2: ...", in bold, italic or a `Caption` tag, within a few
+points of a table or picture) become the block title (`.Table 6. Title`) with an anchor
+(`[[table-6]]`). A table looks for its caption above first, a picture below. The label stays in the title
+text, so the header gets `:table-caption!:` / `:figure-caption!:` and Asciidoctor does not number again.
+
+**Links**: a link annotation to a web or mail address is written as a link macro, with the annotation's own
+text as its `title` (a PDF viewer's tooltip) when it has one. Links to a file path or a bookmark of the
+author's machine (a Word document's internal references) are left as text. **Underlines**: a thin line right
+under a run of words that starts and ends with them (a rule or cell border runs beyond its text) is
+`[.underline]##text##`, whole words only; linked text is left to its link. Hover text is only carried where the
+PDF has it: a Chrome or Word export drops HTML `title` attributes, so GUDID's underlined labels have none.
+Asciidoctor shows a link `title` in HTML and Prince writes it into the PDF link annotation.
+
+**Title and notice** on one line: a gap is judged in ems of the smaller type where the size changes by half
+or more, so a large title and a small notice beside it are two lines, and "Notice:" is a callout.
+**Lists of tables and figures**: the entries are rebuilt from the captions as cross references
+(`xref:table-1[...]`) under the original title, with no page numbers; with no caption of that kind to list
+they are dropped with the contents.
+
+**Text on pictures**: labels wholly inside a picture leave the text flow and go into the picture's
+description (`Text in the picture: ...`), so they neither run into the body text nor sit between a picture
+and its caption. Text level with a tall picture and just beside it is told apart by its layout: words in two
+or more columns and three or more rows, with a gutter no row crosses and most rows reaching into two columns
+(running text never does), are a table, written after the picture; a few loose labels go into the description.
+The text layer is what separates this from a picture of a table: its characters are real text, which a scan's
+are not (those go to OCR). Areas drawn with curves (logos, symbols, icons) are written as pictures too; one inside a table
+cell goes in the cell as an inline image. A drawing in the same place on three pages is furniture.
+
+**Reading order** (tagged): paragraphs set in columns that position order would read row by row (the two
+columns of a record) follow the tags instead.
+
 **Tagged** engine: the tag tree says what is a paragraph, list item, table cell, heading (`H1`-`H6`)
 or contents entry (dropped, `:toc:` added).
 
@@ -69,7 +113,6 @@ or contents entry (dropped, `:toc:` added).
   at a change of type size or boldness, a dedent, or a short last line after a full stop. A paragraph
   over a page break is joined when it stops near the foot of the page without one.
 - **Tables** are those drawn with ruling lines. A wholly bold cell is a header; a lone box is text.
-  A table continuing on the next page becomes two.
 - **Headings** come from numbering and, if unnumbered, from bold text larger than the body. Large
   text ahead of the first numbered heading (a cover) stays text, except the one largest line on
   page 1, which becomes the document title.
@@ -122,8 +165,12 @@ Always review output against the source (`check_fidelity.py`, then the page imag
 
 - **Pictures with text** that are not ruled tables (scans, charts), or any picture under `--no-ocr`,
   stay pictures, flagged for transcription.
-- **Side-by-side columns** (a web form's label and value pairs) split at gaps over three ems and read
-  in visual row order. Tags may list the left column first, so the checker's order figure can drop.
+- **Side-by-side columns** split at gaps over three ems; a tagged PDF reads them in tag order, an
+  untagged one in visual row order.
+- **Contents**: the entries and the title over them are dropped (`:toc:` is added).
+- **Borderless tables** are found from their text only beside a picture; elsewhere the layout engine needs
+  ruling lines.
+- **Pictures of charts and diagrams** stay pictures with the text on them in the description.
 - **Layout guesses** fail on tables without ruling lines, unlabelled lists and headings in body type.
 - **Unsupported**: cell shading, borders and fonts; a block that follows a nested list attaches to its
   last bullet.
@@ -140,12 +187,19 @@ Always review output against the source (`check_fidelity.py`, then the page imag
   words in tag order, without untagged text or contents entries. An untagged one uses the text layer
   minus repeating headers and footers; with ruled tables, order is judged on the text between them,
   since drawing order inside a table need not run row by row.
-- **Tables**: from the tags, or for an untagged PDF from its ruling lines (the same kind of guess the
-  layout engine makes, so look at the page too). Each table must be matched by AsciiDoc table(s) with
+- **Tables**: from the tags (a header repeated on each page counts once), or for an untagged PDF from its
+  ruling lines (the same kind of guess the layout engine makes, so look at the page too). Each table must be matched by AsciiDoc table(s) with
   its text and every row of two or more filled cells in order. Extra rows are reported, not failed.
   Spans are checked only through cells per row.
 - **Pictures**: pages with a picture are flagged; its text is not in the text layer. OCR tables show
   as AsciiDoc tables with no tagged match.
+- **Links, pictures, captions, callouts**: each is counted in the PDF with code of the checker's own, not the
+  converter's, so a shared mistake cannot hide. Link annotations to web or mail addresses against the
+  AsciiDoc's links (distinct targets; a missing one fails); pictures and curve drawings against image
+  macros plus OCR tables, with a blank picture file (wholly transparent or one flat colour) failing and a
+  shortfall a warning; "Table 6." lines against block titles; bold Note/Important labels against
+  admonitions. They were added after the checker passed a converter that dropped links, left a diagram
+  invisible, and lost two callouts.
 - **Structure**: flat heading levels, list item counts, and italic or bold words against the fonts
   (table headers count as bold by style).
 - **Appearance** (`--rendered`): per-page similarity of a PDF rendered from the AsciiDoc. It means

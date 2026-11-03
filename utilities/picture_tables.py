@@ -474,7 +474,7 @@ class PictureTable:
         spec = ",".join(f"{column[i] or '<'}{max(round(100 * w / total), 1)}" for i, w in enumerate(widths))
         first_row = placed[0]
         header_option = bool(first_row) and all(c.header for c in first_row)
-        attrs = [f'cols="{spec}"', f"width={width_percent}%"] + (["options=header"] if header_option else [])
+        attrs = [f'cols="{spec}"', f"width={width_percent}%"] + (["options=header" if header_option else "options=noheader"])
 
         out = [f"[{','.join(attrs)}]", "|==="]
         for r in range(self.rows):

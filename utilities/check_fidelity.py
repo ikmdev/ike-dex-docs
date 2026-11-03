@@ -20,6 +20,11 @@ row and column spans, lists and inline emphasis) and compared with the PDF on:
 * Lists and headings: item counts, and whether heading levels were flattened.
 * Emphasis: italic and bold words in the PDF versus emphasised words in the
   AsciiDoc.
+* Links, pictures, captions and callouts: each counted in the PDF with code of its own, not the
+  converter's, and in the AsciiDoc. A web or mail link annotation should be a link; a picture or a
+  drawing should be a picture (or an OCR table), and the picture file should have something in it;
+  a "Table 6." line should be a block title; a bold "Note" or "Important" label should be an
+  admonition. A shortfall is a warning, except a missing link or a blank picture, which fails.
 * Appearance (optional): with ``--rendered``, a PDF built from the AsciiDoc is
   compared page by page with the source. Pagination rarely matches exactly, so
   treat the score as a guide; ``--diff-dir`` writes side-by-side images.
@@ -93,18 +98,30 @@ def _list_marker(style: str, number: int) -> str:
 # --------------------------------------------------------------------------
 
 
+_CAPTIONED_RE = re.compile(r'^\[(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION),caption="([^"]+)"\]\n(====\n)?', re.MULTILINE)
+
+
+def _with_labels(text: str) -> str:
+    """An admonition's ``caption="Notice"`` is the label it is shown under: Pandoc does not read it, so
+    the label is written into the first paragraph, where it stands in the PDF."""
+    return _CAPTIONED_RE.sub(lambda m: f"[NOTE]\n{m.group(2) or ''}{m.group(1)}: ", text)
+
+
 class AsciiDocModel:
     """Text, headings, lists, tables and emphasis read from an AsciiDoc file."""
 
     def __init__(self, path: Path) -> None:
         import pypandoc
 
-        ast = json.loads(pypandoc.convert_file(str(path), "json", format="asciidoc"))
+        text = _with_labels(path.read_text(encoding="utf-8"))
+        ast = json.loads(pypandoc.convert_text(text, "json", format="asciidoc"))
         self.words: list[str] = []
         self.heading_levels: list[int] = []
         self.list_items = 0
         self.tables: list[dict[str, Any]] = []
         self.emphasis_words = {"italic": 0, "bold": 0, "underline": 0, "super": 0}
+        self.links: list[str] = []
+        self.image_urls: list[str] = []
         self.table_ranges: list[tuple[int, int]] = []  # word index ranges that came from tables
         # the document title (= Title) is metadata to Pandoc, not a block
         title = ast.get("meta", {}).get("title", {})
@@ -145,10 +162,18 @@ class AsciiDocModel:
             elif kind in ("Span",):
                 self._inlines(content[1], sink)
             elif kind == "Link":
+                self.links.append(content[2][0])
                 self._inlines(content[1], sink)
             elif kind in ("Cite",):
                 self._inlines(content[1], sink)
-            # Image, Note, Math, RawInline: nothing comparable.
+            elif kind == "Image":
+                self.image_urls.append(content[2][0])
+                # A picture's description holds the text drawn on it, which the PDF's text layer counts.
+                alt = self._text(content[1])
+                marker = "Text in the picture:"
+                if marker in alt:
+                    sink.append(alt.split(marker, 1)[1])
+            # Note, Math, RawInline: nothing comparable.
 
     def _text(self, items: Iterable[dict]) -> str:
         sink: list[str] = []
@@ -271,6 +296,7 @@ class PdfModel:
         self.tagged = False
         self.image_pages = self._image_pages()
         self.tables: list[dict[str, Any]] = []
+        self.repeated_header_words: list[str] = []  # header rows a ruled table repeats on its later pages
         self.list_items = 0
         # Words per page in the tag tree's reading order (None for an untagged PDF).
         self.tag_page_words: Optional[list[list[str]]] = None
@@ -322,8 +348,15 @@ class PdfModel:
         for number, page in enumerate(self.plumber.pages, 1):
             by_mcid: dict[int, list[str]] = collections.defaultdict(list)
             last: dict[int, dict] = {}
+            previous: Optional[dict] = None
             for char in page.chars:
                 mcid = char.get("mcid")
+                if mcid is None and previous is not None:
+                    # a ligature and the letters after it can sit outside the marked content (see the converter)
+                    size = char.get("size") or 10
+                    if abs(char["top"] - previous["top"]) <= 0.5 * size and -0.5 * size <= char["x0"] - previous["x1"] <= 0.5 * size:
+                        mcid = previous["mcid"]
+                previous = dict(char, mcid=mcid) if mcid is not None else None
                 if mcid is None:
                     continue
                 before = last.get(mcid)
@@ -397,7 +430,30 @@ class PdfModel:
                     continue
                 rows = [[(cell or "") for cell in row] for row in found.extract()]
                 if any(len(row) > 1 for row in rows):
-                    self.tables.append({"rows": rows, "page": number})
+                    last = self.tables[-1] if self.tables else None
+                    # A table on the next page that starts with the rows the table above started with is its
+                    # continuation under a repeated header: keep that header once.
+                    if last is not None and last["page"] + 1 == number and last["rows"][0] != [] and found.bbox[1] < 0.25 * page.height:
+                        head = 0
+                        while (head < min(len(rows), len(last["rows"])) and any(cell_key(c) for c in rows[head])
+                               and [cell_key(c) for c in rows[head]] == [cell_key(c) for c in last["rows"][head]]):
+                            head += 1
+                        if head:
+                            for row in rows[:head]:
+                                self.repeated_header_words += [w for c in row for w in tokens(c)]
+                            last["rows"].extend(rows[head:])
+                            last["page"], last["bottom"] = number, found.bbox[3] / page.height
+                            boxes[number].append(found.bbox)
+                            continue
+                    # or it has no header of its own, and picks up at the top of the page where the last
+                    # one stopped at the foot of the one before
+                    if (last is not None and last["page"] + 1 == number and found.bbox[1] < 0.25 * page.height
+                            and last["bottom"] > 0.75 and len(rows[0]) == len(last["rows"][0])):
+                        last["rows"].extend(rows)
+                        last["page"], last["bottom"] = number, found.bbox[3] / page.height
+                        boxes[number].append(found.bbox)
+                        continue
+                    self.tables.append({"rows": rows, "page": number, "bottom": found.bbox[3] / page.height})
                     boxes[number].append(found.bbox)
         # Bold in a table is header style, not emphasis in the text (an untagged PDF has no TH tags).
         self.bold_words = sum(
@@ -456,6 +512,22 @@ class PdfModel:
             for child in node.get("children", []):
                 header_cells(child, page)
 
+        repeated: set[tuple[int, int]] = set()  # marked content of header rows a PDF repeats on each page
+
+        def keys_of(node: dict, page: Optional[int]) -> list[tuple[int, int]]:
+            found, where, previous = [], page, None
+            for mcid in node.get("mcids") or []:
+                if previous is not None and mcid < previous:
+                    where = (where or 0) + 1
+                previous = mcid
+                found.append((where or 0, mcid))
+            for child in node.get("children", []):
+                found.extend(keys_of(child, node.get("page_number") or page))
+            return found
+
+        def last_page_of(node: dict, page: Optional[int]) -> int:
+            return max((w for w, _ in keys_of(node, page)), default=self._first_page(node) or page or 0)
+
         def visit(node: dict, page: Optional[int]) -> None:
             page = node.get("page_number") or page
             kind = node["type"]
@@ -471,9 +543,40 @@ class PdfModel:
                     elif part["type"] in ("THead", "TBody", "TFoot"):
                         trs.extend(r for r in part.get("children", []) if r["type"] == "TR")
                 rows = [[self._node_text(cell, page) for cell in row.get("children", [])] for row in trs]
-                # A one-column "table" is a layout wrapper (captions, pictures).
-                if rows and any(len(row) > 1 for row in rows):
-                    self.tables.append({"rows": rows, "page": self._first_page(node) or page})
+                is_header = [bool(row.get("children")) and all(c["type"] == "TH" for c in row["children"]) for row in trs]
+                # A one-column "table" is a layout wrapper (captions, pictures), unless it has a header row
+                # and more than one row.
+                if rows and (any(len(row) > 1 for row in rows) or (len(rows) >= 2 and any(is_header))):
+                    head = 0
+                    while head < len(rows) and is_header[head]:
+                        head += 1
+                    key = [[cell_key(c) for c in row] for row in rows[:head]]
+                    last = self.tables[-1] if self.tables else None
+                    # The header of a page's part of the table repeats the one above: Chrome writes a Table
+                    # per page, Word and Prince repeat the header rows inside one. Keep it once.
+                    drop: list[int] = []
+                    if head and last is not None and last["head"] == key and (
+                        (self._first_page(node) or page or 0) == last["last_page"] + 1
+                    ):
+                        drop = list(range(head))
+                    i = head
+                    while head and i + head <= len(rows):
+                        if all(is_header[i:i + head]) and [[cell_key(c) for c in r] for r in rows[i:i + head]] == key:
+                            drop += range(i, i + head)
+                            i += head
+                        else:
+                            i += 1
+                    for index in drop:
+                        repeated.update(keys_of(trs[index], page))
+                    kept = [row for n, row in enumerate(rows) if n not in set(drop)]
+                    if drop and last is not None and last["head"] == key and drop[0] == 0 and (
+                        (self._first_page(node) or page or 0) == last["last_page"] + 1
+                    ):
+                        last["rows"].extend(kept)  # the rest of the table above
+                        last["last_page"] = last_page_of(node, page)
+                    else:
+                        self.tables.append({"rows": kept, "page": self._first_page(node) or page,
+                                            "head": key, "last_page": last_page_of(node, page)})
             for child in node.get("children", []):
                 visit(child, page)
 
@@ -494,7 +597,7 @@ class PdfModel:
                     where = (where or 0) + 1
                 previous = mcid
                 text = self.mcid_text.get(where or 0, {}).get(mcid, "")
-                if text and where:
+                if text and where and (where, mcid) not in repeated:
                     pieces[where].append(text)
             for child in node.get("children", []):
                 collect(child, page)
@@ -540,10 +643,12 @@ def check_text(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
             in_order[i] = True
 
     pdf_counts = collections.Counter(w for w, _ in pdf_tokens)
+    repeated = collections.Counter(pdf.repeated_header_words)
+    pdf_counts = pdf_counts - repeated if pdf.repeated_header_words else pdf_counts
     adoc_counts = collections.Counter(adoc.words)
     missing = pdf_counts - adoc_counts
     extra = adoc_counts - pdf_counts
-    pdf_total, adoc_total = len(pdf_tokens), len(adoc.words)
+    pdf_total, adoc_total = sum(pdf_counts.values()), len(adoc.words)
 
     per_page = []
     for page in range(1, pdf.page_count + 1):
@@ -647,6 +752,111 @@ def check_tables(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
             }
         )
     return {"tables": rows, "orphan_adoc_tables": orphans, "adoc_tables": len(converted)}
+
+
+_LABELS = {"note", "notes", "notice", "tip", "hint", "important", "attention", "warning", "danger", "caution"}
+_CAPTION_LINE_RE = re.compile(r"^(Table|Figure|Fig\.|Chart|Exhibit|Diagram)\s+([A-Z]?\d+(?:[.-]\d+)*[A-Za-z]?)\s*[.:\u2013\u2014-]\s*\S")
+_WEB = ("http://", "https://", "mailto:", "ftp://")
+
+
+def _same_link(url: str) -> str:
+    """A link target as comparable text: Pandoc reads ``mailto:x`` as plain ``x``, and hosts ignore case."""
+    return url.replace("%20", " ").strip().removeprefix("mailto:").rstrip("/").lower()
+
+
+def check_extras(pdf_path: Path, adoc_path: Path, adoc: AsciiDocModel) -> dict[str, Any]:
+    """Links, pictures, captions and callouts, counted in the PDF and in the AsciiDoc."""
+    import pdfplumber
+
+    source = adoc_path.read_text(encoding="utf-8")
+    result: dict[str, Any] = {}
+    links: set[str] = set()  # one link wrapped over two lines is two annotations: compare distinct targets
+    labels = 0
+    captions: set[str] = set()
+    pictures = 0
+    drawn: collections.Counter[tuple] = collections.Counter()
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        for page in pdf.pages:
+            for note in page.annots or []:
+                uri = note.get("uri")
+                if isinstance(uri, str) and uri.lower().startswith(_WEB):
+                    links.add(_same_link(uri))
+            words = page.extract_words(extra_attrs=["fontname"])
+            previous = None
+            for w in words:
+                bare = w["text"].rstrip(":").lower()
+                if bare not in _LABELS or not _BOLD_RE.search(w["fontname"]):
+                    continue
+                if any(o is not w and abs(o["top"] - w["top"]) < 3 and o["x1"] <= w["x0"] + 0.5 and w["x0"] - o["x1"] < 20
+                       for o in words):
+                    continue  # a word inside a line of text: "Disclaimers and notes" is a heading
+                if previous is None or abs(w["top"] - previous["top"]) > 4 or w["x0"] - previous["x1"] > 20:
+                    labels += 1  # "Note Important:" on one line is one callout: only the first label counts
+                previous = w
+            for line in (page.extract_text() or "").split("\n"):
+                match = _CAPTION_LINE_RE.match(line.strip())
+                if match:
+                    captions.add(f"{match.group(1).replace('Fig.', 'Figure')} {match.group(2)}")
+            for image in page.images:
+                if (image["x1"] - image["x0"]) * (image["bottom"] - image["top"]) >= 150 \
+                        and min(image["x1"] - image["x0"], image["bottom"] - image["top"]) >= 8:
+                    drawn[tuple(round(image[k]) for k in ("x0", "top", "x1", "bottom"))] += 1
+                    pictures += 1
+            # drawings: groups of three or more curves lying within a few points of one another
+            groups: list[list[tuple]] = []
+            for curve in page.curves:
+                box = (curve["x0"], curve["top"], curve["x1"], curve["bottom"])
+                if box[2] - box[0] > 0.5 * page.width:
+                    continue
+                joined = [box]
+                for group in groups[:]:
+                    if any(not (box[2] + 6 < o[0] or o[2] + 6 < box[0] or box[3] + 6 < o[1] or o[3] + 6 < box[1]) for o in group):
+                        joined += group
+                        groups.remove(group)
+                groups.append(joined)
+            for group in groups:
+                if len(group) >= 3 and max(b[2] for b in group) - min(b[0] for b in group) >= 10 \
+                        and max(b[3] for b in group) - min(b[1] for b in group) >= 10:
+                    key = (round(min(b[0] for b in group)), round(min(b[1] for b in group)),
+                           round(max(b[2] for b in group)), round(max(b[3] for b in group)))
+                    drawn[("vector",) + key] += 1
+                    pictures += 1
+        repeated = sum(count for count in drawn.values() if count >= 3)  # running headers and footers
+    found = {_same_link(u) for u in adoc.links}
+    result["links_pdf"] = len(links)
+    result["links_adoc"] = len(found & links)
+    result["links_missing"] = sorted(links - found)
+    result["picture_count_pdf"] = pictures - repeated
+    result["picture_count_adoc"] = len(adoc.image_urls) + source.count("// OCR transcription of")
+    blank = []
+    for url in adoc.image_urls:
+        target = (adoc_path.parent / url)
+        if target.is_file() and _blank_image(target):
+            blank.append(url)
+    result["blank_images"] = blank
+    titled = set()
+    for match in re.finditer(r"^\.(Table|Figure|Chart|Exhibit|Diagram)\s+([A-Z]?\d+(?:[.-]\d+)*[A-Za-z]?)\s*[.:\u2013\u2014-]", source, re.MULTILINE):
+        titled.add(f"{match.group(1)} {match.group(2)}")
+    result["captions_pdf"] = len(captions)
+    result["captions_untitled"] = sorted(captions - titled)
+    result["callouts_pdf"] = labels
+    result["callouts_adoc"] = len(re.findall(
+        r"^(?:(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION): |\[(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)(?:,[^\]]*)?\]$)", source, re.MULTILINE))
+    return result
+
+
+def _blank_image(path: Path) -> bool:
+    """A picture with nothing to see: wholly transparent, or one flat colour."""
+    try:
+        from PIL import Image
+
+        image = Image.open(path)
+        if "A" in image.getbands() and image.getchannel("A").getextrema()[1] == 0:
+            return True
+        extrema = image.convert("RGB").getextrema()
+        return all(lo == hi for lo, hi in extrema)
+    except Exception:
+        return False
 
 
 def check_structure(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
@@ -796,6 +1006,24 @@ def report(results: dict[str, Any], args: argparse.Namespace) -> bool:
         print("       " + line)
     print(f"       heading levels {s['heading_levels']}, underlined words {s['adoc_underline_words']}, superscripts {s['adoc_superscripts']}")
 
+    e = results["extras"]
+    gate = not e["links_missing"]
+    ok &= gate
+    print(f"[{_status(gate)}] Links: {e['links_pdf']} distinct web or mail targets in the PDF, {e['links_adoc']} of them linked in the AsciiDoc")
+    for url in e["links_missing"][:5]:
+        print(f"       missing: {url}")
+    gate = not e["blank_images"]
+    ok &= gate
+    short = e["picture_count_adoc"] < e["picture_count_pdf"]
+    print(f"[{_status(gate) if not short or not gate else 'WARN'}] Pictures: {e['picture_count_pdf']} pictures and drawings in the PDF, "
+          f"{e['picture_count_adoc']} pictures or OCR tables in the AsciiDoc")
+    if e["blank_images"]:
+        print("       blank picture files (nothing to see): " + ", ".join(e["blank_images"]))
+    print(f"[{'WARN' if e['captions_untitled'] else 'PASS'}] Captions: {e['captions_pdf']} in the PDF"
+          + (f", not block titles: {', '.join(e['captions_untitled'][:8])}" if e["captions_untitled"] else ", all block titles"))
+    print(f"[{'WARN' if e['callouts_adoc'] < e['callouts_pdf'] else 'PASS'}] Callouts: {e['callouts_pdf']} bold Note/Important labels "
+          f"in the PDF, {e['callouts_adoc']} admonitions in the AsciiDoc")
+
     if "appearance" in results:
         a = results["appearance"]
         gate = a["mean_score"] >= args.min_appearance and a["source_pages"] == a["rendered_pages"]
@@ -833,6 +1061,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "text": check_text(pdf, adoc),
             "tables": check_tables(pdf, adoc),
             "structure": check_structure(pdf, adoc),
+            "extras": check_extras(args.pdf, args.adoc, adoc),
         }
         if args.rendered:
             results["appearance"] = check_appearance(args.pdf, args.rendered, args.diff_dir)
