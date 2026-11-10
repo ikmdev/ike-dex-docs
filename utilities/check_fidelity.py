@@ -39,12 +39,15 @@ from __future__ import annotations
 import argparse
 import collections
 import difflib
+import statistics
 import json
 import re
 import sys
 import unicodedata
 from pathlib import Path
 from typing import Any, Iterable, Optional
+
+from structure_pages import paged_structure_tree
 
 _TOKEN_RE = re.compile(r"[^\W_]+|[%±≥≤<>=×°+/]")
 _ITALIC_RE = re.compile(r"italic|oblique", re.IGNORECASE)
@@ -266,6 +269,138 @@ class AsciiDocModel:
 # --------------------------------------------------------------------------
 
 
+def _same_header(above: list[list[str]], below: list[list[str]]) -> bool:
+    """Is ``below`` the header ``above`` repeated? Each of its rows is the row above or the row above with
+    cells missing (a producer can tag one cell of a repeated header as part of the row before it)."""
+    if len(above) != len(below) or not above:
+        return False
+
+    def subsequence(small: list[str], big: list[str]) -> bool:
+        it = iter(big)
+        return all(any(x == y for y in it) for x in small)
+
+    return all(a == b or (sum(1 for c in b if c) >= 2 and subsequence(b, a)) for a, b in zip(above, below))
+
+
+def _run_text(chars: list[dict]) -> str:
+    """The text of one marked-content run, with a space where the PDF draws a gap or starts a new line.
+    Some producers (browsers) draw words without a space character."""
+    out: list[str] = []
+    before: Optional[dict] = None
+    for char in chars:
+        size = char.get("size") or 10
+        matrix = char.get("matrix") or (1, 0, 0, 1, 0, 0)
+        if before is not None and char["text"].strip() and before["text"].strip():
+            if abs(matrix[1]) > abs(matrix[0]):  # text on its side: the gap is along the page, the line across it
+                gap = (before["top"] - char["bottom"]) if matrix[1] > 0 else (char["top"] - before["bottom"])
+                across = abs(char["x0"] - before["x0"])
+            else:
+                gap, across = char["x0"] - before["x1"], abs(char["top"] - before["top"])
+            if gap > 0.18 * size or across > 0.5 * size:
+                out.append(" ")
+        out.append(char["text"])
+        before = char
+    return "".join(out)
+
+
+def _column_major(chars: list[dict]) -> list[dict]:
+    """A run that holds the lines of several columns (a producer tags a page of a table as one run) is in
+    drawing order, row by row across the columns. Its words belong column by column, as a reader takes them
+    and as a converter writes the cells: split where a gutter, no character crosses, runs the height of the
+    text, and put the columns left to right."""
+    if len(chars) < 80:
+        return chars
+    visible = [c for c in chars if c["text"].strip()]
+    spans = sorted((c["x0"], c["x1"]) for c in visible)
+    size = statistics.median((c.get("size") or 10) for c in visible)
+    columns: list[list[float]] = [[spans[0][0], spans[0][1]]]
+    for x0, x1 in spans[1:]:
+        if x0 - columns[-1][1] > 1.5 * size:
+            columns.append([x0, x1])
+        else:
+            columns[-1][1] = max(columns[-1][1], x1)
+    if len(columns) < 2:
+        return chars
+    rows = {round(c["top"] / max(size, 1)) for c in visible}
+    if len(rows) < 8:  # a few lines across columns are a row of a table, read across
+        return chars
+
+    def column_of(char: dict) -> int:
+        middle = (char["x0"] + char["x1"]) / 2
+        return next((i for i, (a, b) in enumerate(columns) if a - 0.1 <= middle <= b + 0.1), 0)
+
+    ordered = sorted(chars, key=lambda c: (column_of(c), round(c["top"] / max(size / 2, 1)), c["x0"]))
+    return ordered
+
+
+def _continuation_runs(tree: list[dict]) -> set[tuple[int, int]]:
+    """Marked content that carries a table on to a later page outside the cells that began there.
+
+    A producer cuts a cell at a page break and tags what is left on the next page in one of two ways: as a
+    Table with no rows of its own, on a page the table above runs into or just past, or as the later-page
+    marks of a cell that spans two pages. Either way the tags list the first parts of all the cells on a page,
+    and only then the rest of each, while a converter writes each cell whole."""
+
+    def marks(node: dict) -> list[tuple[int, int]]:
+        found = list(node.get("mcid_pages") or [])
+        for child in node.get("children", []):
+            found += marks(child)
+        return found
+
+    def has_rows(node: dict) -> bool:
+        return any(
+            c["type"] == "TR" or (c["type"] in ("THead", "TBody", "TFoot") and any(r["type"] == "TR" for r in c.get("children", [])))
+            for c in node.get("children", [])
+        )
+
+    tables: list[dict] = []
+    cells: list[dict] = []
+
+    def walk(node: dict) -> None:
+        if node["type"] == "Table":
+            tables.append(node)
+        elif node["type"] in ("TD", "TH"):
+            cells.append(node)
+        for child in node.get("children", []):
+            walk(child)
+
+    for root in tree:
+        walk(root)
+    spans = [(min(p for p, _ in found), max(p for p, _ in found)) for t in tables if has_rows(t) and (found := marks(t))]
+    runs: set[tuple[int, int]] = set()
+    for table in tables:
+        if not has_rows(table):
+            runs.update((p, m) for p, m in table.get("mcid_pages") or [] if any(first < p <= last + 1 for first, last in spans))
+    for cell in cells:
+        found = marks(cell)
+        pages = sorted({p for p, _ in found})
+        if len(pages) > 1:
+            runs.update((p, m) for p, m in found if p > pages[0])
+    return runs
+
+
+def _split_cells(chars: list[dict]) -> list[list[dict]]:
+    """Cut a run into the cells it holds: a producer lists one cell's text top to bottom and then the next, so
+    the reading position jumping back up the page starts the next cell. Text on its side is one piece."""
+    if not all(c.get("upright", True) for c in chars):
+        return [chars]
+    pieces: list[list[dict]] = []
+    before: Optional[float] = None
+    for char in chars:
+        if before is not None and pieces and char["top"] < before - 6:
+            pieces.append([])
+        if not pieces:
+            pieces.append([])
+        pieces[-1].append(char)
+        before = char["top"]
+    return pieces
+
+
+def _in_order(words: list[str], reference: list[str]) -> int:
+    """How many of ``words`` are found in order in ``reference``."""
+    return sum(b.size for b in difflib.SequenceMatcher(None, words, reference, autojunk=False).get_matching_blocks())
+
+
 class PdfModel:
     """Per-page words, tagged tables and lists, and italic/bold word counts."""
 
@@ -291,15 +426,21 @@ class PdfModel:
         self.italic_words = 0
         self.bold_words = 0
         self.mcid_text: dict[int, dict[int, str]] = {}
+        self.mcid_chars: dict[int, dict[int, list[dict]]] = {}  # the characters of each run, in reading order
         self._bold: list[tuple[int, Optional[int], int, tuple[float, float]]] = []  # page, mcid, words, centre
         self._scan_characters()
         self.tagged = False
         self.image_pages = self._image_pages()
         self.tables: list[dict[str, Any]] = []
         self.repeated_header_words: list[str] = []  # header rows a ruled table repeats on its later pages
+        self.tag_repeated_words: list[str] = []  # the same for tagged tables, for a PDF read from its text layer
         self.list_items = 0
         # Words per page in the tag tree's reading order (None for an untagged PDF).
         self.tag_page_words: Optional[list[list[str]]] = None
+        # The same words run by run, (page, run, words) in reading order, so a run can be judged on its own.
+        self.tag_runs: list[tuple[int, int, list[str]]] = []
+        # Runs that carry a table on to a later page outside the cells that began there (see _continuation_runs).
+        self.continuations: set[tuple[int, int]] = set()
         self._scan_structure()
         # For an untagged PDF with ruled tables: words in page order, without tables or running headers.
         self.layout_order_words: Optional[list[list[str]]] = None
@@ -346,8 +487,7 @@ class PdfModel:
 
     def _scan_characters(self) -> None:
         for number, page in enumerate(self.plumber.pages, 1):
-            by_mcid: dict[int, list[str]] = collections.defaultdict(list)
-            last: dict[int, dict] = {}
+            runs: dict[int, list[dict]] = collections.defaultdict(list)
             previous: Optional[dict] = None
             for char in page.chars:
                 mcid = char.get("mcid")
@@ -357,19 +497,10 @@ class PdfModel:
                     if abs(char["top"] - previous["top"]) <= 0.5 * size and -0.5 * size <= char["x0"] - previous["x1"] <= 0.5 * size:
                         mcid = previous["mcid"]
                 previous = dict(char, mcid=mcid) if mcid is not None else None
-                if mcid is None:
-                    continue
-                before = last.get(mcid)
-                # Some producers (browsers) draw words without a space character: a gap or a new line
-                # between two characters of the same marked content is a word break.
-                if before is not None and char["text"].strip() and before["text"].strip() and (
-                    char["x0"] - before["x1"] > 0.18 * (char.get("size") or 10)
-                    or abs(char["top"] - before["top"]) > 0.5 * (char.get("size") or 10)
-                ):
-                    by_mcid[mcid].append(" ")
-                by_mcid[mcid].append(char["text"])
-                last[mcid] = char
-            self.mcid_text[number] = {m: "".join(c) for m, c in by_mcid.items()}
+                if mcid is not None:
+                    runs[mcid].append(char)
+            self.mcid_chars[number] = {m: _column_major(chars) for m, chars in runs.items()}
+            self.mcid_text[number] = {m: _run_text(chars) for m, chars in self.mcid_chars[number].items()}
             for word in page.extract_words(extra_attrs=["fontname", "mcid"]):
                 count = len(tokens(word["text"]))
                 if _ITALIC_RE.search(word["fontname"]):
@@ -492,7 +623,7 @@ class PdfModel:
 
     def _scan_structure(self) -> None:
         try:
-            tree = self.plumber.structure_tree
+            tree = paged_structure_tree(self.plumber)
         except Exception:  # untagged or unreadable structure
             tree = []
         if not tree:
@@ -515,14 +646,18 @@ class PdfModel:
         repeated: set[tuple[int, int]] = set()  # marked content of header rows a PDF repeats on each page
 
         def keys_of(node: dict, page: Optional[int]) -> list[tuple[int, int]]:
+            page = node.get("page_number") or page  # a cell states its own page; its row and table may not
             found, where, previous = [], page, None
-            for mcid in node.get("mcids") or []:
-                if previous is not None and mcid < previous:
-                    where = (where or 0) + 1
-                previous = mcid
-                found.append((where or 0, mcid))
+            if node.get("mcid_pages"):  # the tree states each id's page
+                found.extend((p or page or 0, m) for p, m in node["mcid_pages"])
+            else:
+                for mcid in node.get("mcids") or []:
+                    if previous is not None and mcid < previous:
+                        where = (where or 0) + 1
+                    previous = mcid
+                    found.append((where or 0, mcid))
             for child in node.get("children", []):
-                found.extend(keys_of(child, node.get("page_number") or page))
+                found.extend(keys_of(child, page))
             return found
 
         def last_page_of(node: dict, page: Optional[int]) -> int:
@@ -550,27 +685,36 @@ class PdfModel:
                     head = 0
                     while head < len(rows) and is_header[head]:
                         head += 1
-                    key = [[cell_key(c) for c in row] for row in rows[:head]]
                     last = self.tables[-1] if self.tables else None
+                    if (not head and rows and last is not None and last["rows"]
+                            and (self._first_page(node) or page or 0) == (last["last_page"] or last["page"] or 0) + 1
+                            and sum(1 for c in rows[0] if cell_key(c)) >= 2
+                            and [cell_key(c) for c in rows[0]] == [cell_key(c) for c in last["rows"][0]]):
+                        # Some producers tag the header they repeat on the next page as a plain row
+                        head = 1
+                        is_header[0] = True
+                        last["head"] = [[cell_key(c) for c in rows[0]]]
+                    key = [[cell_key(c) for c in row] for row in rows[:head]]
                     # The header of a page's part of the table repeats the one above: Chrome writes a Table
                     # per page, Word and Prince repeat the header rows inside one. Keep it once.
                     drop: list[int] = []
-                    if head and last is not None and last["head"] == key and (
-                        (self._first_page(node) or page or 0) == last["last_page"] + 1
+                    if head and last is not None and _same_header(last["head"], key) and (
+                        (self._first_page(node) or page or 0) == (last["last_page"] or last["page"] or 0) + 1
                     ):
                         drop = list(range(head))
                     i = head
                     while head and i + head <= len(rows):
-                        if all(is_header[i:i + head]) and [[cell_key(c) for c in r] for r in rows[i:i + head]] == key:
+                        if all(is_header[i:i + head]) and _same_header(key, [[cell_key(c) for c in r] for r in rows[i:i + head]]):
                             drop += range(i, i + head)
                             i += head
                         else:
                             i += 1
                     for index in drop:
                         repeated.update(keys_of(trs[index], page))
+                        self.tag_repeated_words += [w for c in rows[index] for w in tokens(c)]
                     kept = [row for n, row in enumerate(rows) if n not in set(drop)]
-                    if drop and last is not None and last["head"] == key and drop[0] == 0 and (
-                        (self._first_page(node) or page or 0) == last["last_page"] + 1
+                    if drop and last is not None and _same_header(last["head"], key) and drop[0] == 0 and (
+                        (self._first_page(node) or page or 0) == (last["last_page"] or last["page"] or 0) + 1
                     ):
                         last["rows"].extend(kept)  # the rest of the table above
                         last["last_page"] = last_page_of(node, page)
@@ -586,19 +730,24 @@ class PdfModel:
         self.bold_words = sum(n for page, mcid, n, _ in self._bold if (page, mcid) not in header_mcids)
 
         pieces: dict[int, list[str]] = collections.defaultdict(list)
+        runs: list[tuple[int, int, str]] = []
 
         def collect(node: dict, page: Optional[int]) -> None:
             if node["type"] in ("TOC", "TOCI"):  # a contents list is rebuilt from the headings
                 return
             page = node.get("page_number") or page
             where, previous = page, None
-            for mcid in node.get("mcids") or []:
-                if previous is not None and mcid < previous:  # marked content restarts on a new page
+            states = [(p or page, m) for p, m in node["mcid_pages"]] if node.get("mcid_pages") else None
+            for n, mcid in enumerate(node.get("mcids") or []):
+                if states is not None:
+                    where = states[n][0]
+                elif previous is not None and mcid < previous:  # marked content restarts on a new page
                     where = (where or 0) + 1
                 previous = mcid
                 text = self.mcid_text.get(where or 0, {}).get(mcid, "")
                 if text and where and (where, mcid) not in repeated:
                     pieces[where].append(text)
+                    runs.append((where, mcid, text))
             for child in node.get("children", []):
                 collect(child, page)
 
@@ -608,6 +757,8 @@ class PdfModel:
             self.tag_page_words = [
                 tokens(" ".join(pieces.get(n, []))) for n in range(1, self.page_count + 1)
             ]
+            self.tag_runs = [(page, mcid, tokens(text)) for page, mcid, text in runs]
+            self.continuations = _continuation_runs(tree)
 
 
 # --------------------------------------------------------------------------
@@ -615,14 +766,58 @@ class PdfModel:
 # --------------------------------------------------------------------------
 
 
+_CELL_ORDER = 0.99  # share of a continuation run that must read in order inside one cell to be judged there
+
+
+def _judge_continuations(pdf: PdfModel, adoc: AsciiDocModel) -> dict[tuple[int, int], dict[str, int]]:
+    """Judge each continuation run cell by cell, against the AsciiDoc cell it belongs to.
+
+    The tags list a cut cell's first part with the rest of that page and its remainder with the next page, so
+    against the converter's whole cell the order differs through no fault of the output. The remainder is
+    checked on its own instead: cut into the cells it holds, each judged for order inside the AsciiDoc cell
+    sharing most of its words (never against the whole document, where common words would match in any
+    order). A run that does not cut into cells reading in order is left to the main check."""
+    if not pdf.continuations:
+        return {}
+    cells = [
+        (collections.Counter(words), words)
+        for table in adoc.tables for row in table["rows"] for cell in row if (words := tokens(cell))
+    ]
+    judged: dict[tuple[int, int], dict[str, int]] = {}
+    for page, mcid, words in pdf.tag_runs:
+        if (page, mcid) not in pdf.continuations or not words:
+            continue
+        total = ordered = 0
+        pieces = _split_cells(pdf.mcid_chars.get(page, {}).get(mcid, []))
+        for piece in pieces:
+            piece_words = tokens(_run_text(piece))
+            if not piece_words:
+                continue
+            counts = collections.Counter(piece_words)
+            best = max(cells, key=lambda c: sum((counts & c[0]).values()), default=None)
+            total += len(piece_words)
+            ordered += _in_order(piece_words, best[1]) if best else 0
+        if total and ordered >= _CELL_ORDER * total:
+            judged[(page, mcid)] = {"page": page, "words": total, "in_order": ordered, "cells": len(pieces)}
+    return judged
+
+
 def check_text(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
     # A tagged PDF's tag tree gives the expected words in reading order, leaving out untagged text
     # (letterhead, headers, footers) and contents lists. Its drawing order is not used: it can put a
     # table after the paragraphs that follow it on the page.
     adoc_order = adoc.words
+    per_cell: dict[tuple[int, int], dict[str, int]] = {}
     if pdf.tag_page_words is not None:
-        ordered = pdf.tag_page_words
-        pdf_tokens = None
+        # The page a table continues on is judged cell by cell where it can be (see _judge_continuations);
+        # the rest, and every word's presence, is judged as a whole.
+        per_cell = _judge_continuations(pdf, adoc)
+        pages: dict[int, list[str]] = collections.defaultdict(list)
+        for page, mcid, words in pdf.tag_runs:
+            if (page, mcid) not in per_cell:
+                pages[page] += words
+        ordered = [pages.get(n, []) for n in range(1, pdf.page_count + 1)]
+        pdf_tokens = "tags"
     elif pdf.layout_order_words is not None:
         # Untagged, with ruled tables: judge order on the text between the tables, in page order.
         ordered, adoc_order, pdf_tokens = pdf.layout_order_words, adoc.words_outside_tables, "pdfium"
@@ -632,6 +827,8 @@ def check_text(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
     order_tokens = [(w, page) for page, words in enumerate(ordered, 1) for w in words]
     if pdf_tokens == "pdfium":
         pdf_tokens = [(w, page) for page, words in enumerate(pdf.page_words, 1) for w in words]
+    elif pdf_tokens == "tags":
+        pdf_tokens = [(w, page) for page, words in enumerate(pdf.tag_page_words, 1) for w in words]
     else:
         pdf_tokens = order_tokens
     matcher = difflib.SequenceMatcher(
@@ -644,7 +841,9 @@ def check_text(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
 
     pdf_counts = collections.Counter(w for w, _ in pdf_tokens)
     repeated = collections.Counter(pdf.repeated_header_words)
-    pdf_counts = pdf_counts - repeated if pdf.repeated_header_words else pdf_counts
+    if pdf.tag_page_words is None:  # the text layer has a table's repeated header each time; the tags already leave it out
+        repeated += collections.Counter(pdf.tag_repeated_words)
+    pdf_counts = pdf_counts - repeated if repeated else pdf_counts
     adoc_counts = collections.Counter(adoc.words)
     missing = pdf_counts - adoc_counts
     extra = adoc_counts - pdf_counts
@@ -653,15 +852,20 @@ def check_text(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
     per_page = []
     for page in range(1, pdf.page_count + 1):
         flags = [in_order[i] for i, (_, p) in enumerate(order_tokens) if p == page]
+        cells = [r for r in per_cell.values() if r["page"] == page]
         per_page.append(
-            {"page": page, "words": len(flags), "in_order": sum(flags)}
+            {"page": page, "words": len(flags) + sum(r["words"] for r in cells),
+             "in_order": sum(flags) + sum(r["in_order"] for r in cells)}
         )
+    in_cells = {"runs": len(per_cell), "words": sum(r["words"] for r in per_cell.values()),
+                "in_order": sum(r["in_order"] for r in per_cell.values())}
     return {
         "pdf_words": pdf_total,
         "adoc_words": adoc_total,
         "content_recall": 1 - sum(missing.values()) / max(pdf_total, 1),
         "content_excess": sum(extra.values()) / max(pdf_total, 1),
-        "order_recall": sum(in_order) / max(len(order_tokens), 1),
+        "order_recall": (sum(in_order) + in_cells["in_order"]) / max(len(order_tokens) + in_cells["words"], 1),
+        "in_cells": in_cells,
         "missing": missing.most_common(12),
         "extra": extra.most_common(12),
         "per_page": per_page,
@@ -672,6 +876,31 @@ def check_text(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
 
 def _overlap(left: list[str], right: list[str]) -> int:
     return sum((collections.Counter(left) & collections.Counter(right)).values())
+
+
+def _join_whole_cells(rows: list[list[str]], known: set[str]) -> list[list[str]]:
+    """Join neighbouring tag cells that read, together, as exactly one AsciiDoc cell.
+
+    A producer can split a cell the page draws as one (a label spanning two columns) into two tagged cells,
+    which the converter, writing what is drawn, keeps as one. The join must equal a converted cell exactly
+    and neither part may be a converted cell itself, so a cell the converter lost cannot hide in it."""
+    joined: list[list[str]] = []
+    for row in rows:
+        out: list[str] = []
+        i = 0
+        while i < len(row):
+            for j in range(len(row), i + 1, -1):  # the longest join of at least two cells first
+                parts = row[i:j]
+                if (all(cell_key(c) for c in parts) and not any(cell_key(c) in known for c in parts)
+                        and cell_key(" ".join(parts)) in known):
+                    out.append(" ".join(parts))
+                    i = j
+                    break
+            else:
+                out.append(row[i])
+                i += 1
+        joined.append(out)
+    return joined
 
 
 def check_tables(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
@@ -690,11 +919,13 @@ def check_tables(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
         letters = [ch for row in rows for c in row for w in tokens(c) for ch in w]
         return [k for row in keys for k in row if k], letters, [n for n in counts if n > 1]
 
+    known = {key for t in adoc.tables for row in t["rows"] for c in row if (key := cell_key(c))}
     tagged = []
     for t in pdf.tables:
-        keys, letters, shape = filled(t["rows"])
+        rows_whole = _join_whole_cells(t["rows"], known)
+        keys, letters, shape = filled(rows_whole)
         tagged.append({"keys": keys, "letters": letters, "shape": shape, "page": t.get("page"),
-                       "rows": t["rows"]})
+                       "rows": rows_whole})
     converted = []
     for t in adoc.tables:
         keys, letters, shape = filled(t["rows"])
@@ -779,7 +1010,8 @@ def check_extras(pdf_path: Path, adoc_path: Path, adoc: AsciiDocModel) -> dict[s
         for page in pdf.pages:
             for note in page.annots or []:
                 uri = note.get("uri")
-                if isinstance(uri, str) and uri.lower().startswith(_WEB):
+                in_band = note["bottom"] > 0.93 * page.height or note["top"] < 0.07 * page.height
+                if isinstance(uri, str) and uri.lower().startswith(_WEB) and not in_band:  # not a running header or footer
                     links.add(_same_link(uri))
             words = page.extract_words(extra_attrs=["fontname"])
             previous = None
@@ -937,6 +1169,10 @@ def report(results: dict[str, Any], args: argparse.Namespace) -> bool:
         f"in-order recall {text['order_recall']:.1%} (gate {args.min_order:.1%}), "
         f"excess words {text['content_excess']:.1%}"
     )
+    if text["in_cells"]["runs"]:
+        cells = text["in_cells"]
+        print(f"       {cells['words']} words of {cells['runs']} table continuations judged inside their own cell: "
+              f"{cells['in_order']} in order")
     if text["missing"]:
         print("       most missing:", ", ".join(f"{w}×{n}" for w, n in text["missing"]))
     if text["extra"]:

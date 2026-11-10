@@ -34,6 +34,8 @@ import statistics
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence, Union
 
+from structure_pages import paged_structure_tree
+
 _ITALIC_RE = re.compile(r"italic|oblique", re.IGNORECASE)
 _BOLD_RE = re.compile(r"bold|black|heavy|semibold|demi", re.IGNORECASE)
 
@@ -105,6 +107,7 @@ class Ch:
     link: Optional[str] = None  # the address of the link annotation over the character
     link_title: str = ""  # the link annotation's own text (a tooltip), where it has one
     underline: bool = False  # a thin line is drawn right under it
+    rot: int = 0  # 90 when the text runs up the page, -90 when it runs down
 
 
 @dataclasses.dataclass
@@ -134,13 +137,31 @@ def _normalize_char(text: str) -> str:
 
 def make_char(raw: dict, owner: Optional[int], page: int) -> Ch:
     font = raw.get("fontname") or ""
+    matrix = raw.get("matrix") or (1, 0, 0, 1, 0, 0)
+    rot = (90 if matrix[1] > 0 else -90) if abs(matrix[1]) > abs(matrix[0]) else 0
     return Ch(
         text=_normalize_char(raw["text"]),
         x0=raw["x0"], x1=raw["x1"], top=raw["top"], bottom=raw["bottom"],
         size=raw.get("size") or (raw["bottom"] - raw["top"]),
         bold=bool(_BOLD_RE.search(font)), italic=bool(_ITALIC_RE.search(font)),
-        owner=owner, page=page,
+        owner=owner, page=page, rot=rot,
     )
+
+
+def unrotate(chars: list[Ch]) -> list[Ch]:
+    """Text that runs up or down the page (a row label turned on its side) as if it ran along a line: the
+    characters are placed by their position along the text, so lines are made of them as of any other."""
+    if not any(c.rot for c in chars):
+        return chars
+    out = []
+    for c in chars:
+        if c.rot == 90:  # reads from the bottom up, the tops of the glyphs towards the left
+            out.append(dataclasses.replace(c, x0=-c.bottom, x1=-c.top, top=c.x0, bottom=c.x1, rot=0))
+        elif c.rot == -90:  # reads from the top down, the tops of the glyphs towards the right
+            out.append(dataclasses.replace(c, x0=c.top, x1=c.bottom, top=-c.x1, bottom=-c.x0, rot=0))
+        else:
+            out.append(c)
+    return out
 
 
 _LINK_SCHEMES = ("http://", "https://", "mailto:", "ftp://")
@@ -583,8 +604,13 @@ def flow_blocks(lines: list[Line], layout: bool = False, right_edge: float = 0.0
             # bullet glyph must also follow a finished sentence: "(1) SARS" can be a wrapped enumeration.
             label = parse_label(plain(line_units(line)).lstrip())
             ended = plain(line_units(current[-1])).rstrip().endswith((".", ":", ";", "!", "?"))
+            opened = parse_label(plain(line_units(current[0])).lstrip())
+            # the next number in a numbered list starts an item whatever the line above ended with (a web
+            # address, say); only a stray label inside a wrapped line needs the full stop before it
+            follows = (label is not None and opened is not None and label.kind == opened.kind
+                       and label.kind in ("num", "alpha", "ALPHA") and label.value == opened.value + 1)
             starts_item = label is not None and (
-                ended or (label.kind == "bullet" and label.raw not in "-–—")
+                ended or follows or (label.kind == "bullet" and label.raw not in "-–—")
             )
         if layout and current:
             breaks = starts_item or _layout_break(current[-1], line, current[0], right_edge, pitch)
@@ -1142,6 +1168,45 @@ def _assign_grid(table: Table) -> bool:
     return True
 
 
+def _columns_by_position(table: Table) -> bool:
+    """Fallback when the borders do not explain the spans: each cell goes in the column it starts in, found from
+    where cells (their boxes, or their text) start across the table. A row without a first cell (a cell above
+    spans down into it) gets an empty one, and a gap in a row is a cell stretched over it. False when the cells
+    do not fall into a few clear columns."""
+    def left(cell: Cell) -> Optional[float]:
+        if cell.rect:
+            return cell.rect[0]
+        visible = [c.x0 for c in cell.chars if c.text.strip()]
+        return min(visible) if visible else None
+
+    starts = [x for row in table.rows for c in row for x in [left(c)] if x is not None]
+    if not starts:
+        return False
+    edges = _cluster(starts, 4.0)
+    if len(edges) < 2 or len(edges) > 40:
+        return False
+    for row in table.rows:
+        columns = []
+        for cell in row:
+            x = left(cell)
+            columns.append(None if x is None else _nearest(edges, x))
+        if any(c is None for c in columns) or columns != sorted(columns) or len(set(columns)) != len(columns):
+            return False  # a cell with no place, or two in one column: the layout is not a grid of starts
+    for row in table.rows:
+        columns = [_nearest(edges, left(c)) for c in row]  # type: ignore[arg-type]
+        placed: list[Cell] = []
+        if columns[0] > 0:
+            blank = Cell(header=row[0].header, chars=[], page=row[0].page, colspan=columns[0])
+            placed.append(blank)
+        for k, cell in enumerate(row):
+            cell.rowspan = 1
+            following = columns[k + 1] if k + 1 < len(row) else len(edges)
+            cell.colspan = max(following - columns[k], 1)
+            placed.append(cell)
+        row[:] = placed
+    return True
+
+
 def _pad_rows(table: Table) -> int:
     """Fallback when borders do not explain the layout: stretch short rows to the widest row."""
     width = max(sum(c.colspan for c in row) for row in table.rows)
@@ -1217,6 +1282,75 @@ def _drop_repeated_headers(table: Table) -> int:
     return dropped
 
 
+def _infer_header(table: Table) -> int:
+    """Header rows of a table of numbers that nothing marks as a header (no header tag, no bold, no repeat): the
+    rows at the top with not a figure in them, over rows that are mostly figures, where the first of those rows
+    is nearly all figures. A table of names and values has half its cells as figures at most, so is left. Marks the
+    cells and returns the rows."""
+    rows = [r for r in table.rows if r]
+    if len(rows) < 3 or any(c.header for c in rows[0]):
+        return 0
+
+    def figures(row: list[Cell]) -> tuple[int, int]:
+        texts = [_cell_text(c) for c in row if c.chars]
+        return sum(1 for t in texts if re.search(r"\d", t)), len(texts)
+
+    count = 0
+    while count < min(3, len(rows) - 2) and figures(rows[count])[0] == 0 and figures(rows[count])[1] > 0:
+        count += 1
+    if not count:
+        return 0
+    body = rows[count:]
+    with_figures = sum(1 for r in body if figures(r)[0])
+    first_figs, first_cells = figures(body[0])
+    if with_figures < 0.6 * len(body) or not first_cells or first_figs < 0.6 * first_cells:
+        return 0
+    for row in rows[:count]:
+        for cell in row:
+            cell.header = True
+    return count
+
+
+def _repeats_first_row(first: Table, second: Table) -> bool:
+    """Does ``second`` open with the row ``first`` opens with? A row set again at the top of the next page is a
+    header, however it is styled (the tags of some producers call it a plain row, in regular type)."""
+    a, b = [_cell_text(c) for c in first.rows[0]], [_cell_text(c) for c in second.rows[0]]
+    return a == b and sum(1 for t in a if t) >= 2
+
+
+def group_lines_text(cell: Cell) -> list[Unit]:
+    """The text of a cell as units, in reading order."""
+    return join_units([ln for ln in group_lines(unrotate(cell.chars)) if not ln.blank])
+
+
+def _fold_rows_in_the_same_box(table: Table) -> int:
+    """Some producers tag the first line of a cell as a row of its own. Its box on the page is the very box of a
+    cell in the row beside it, so the line is that cell's text. Returns the rows folded away."""
+    folded, i = 0, 0
+    while i < len(table.rows):
+        row = table.rows[i]
+        boxed = bool(row) and all(c.rect for c in row)
+        home = None
+        if boxed:
+            for j in (i + 1, i - 1):
+                if 0 <= j < len(table.rows) and table.rows[j] is not row:
+                    others = table.rows[j]
+                    matches = [next((o for o in others if o.rect and o.page == c.page
+                                     and all(abs(a - b) <= _EDGE_TOL for a, b in zip(o.rect, c.rect))), None)
+                               for c in row]
+                    if all(matches) and len(row) < len(others):
+                        home = matches
+                        break
+        if home:
+            for cell, target in zip(row, home):
+                target.chars = cell.chars + target.chars
+            del table.rows[i]
+            folded += 1
+        else:
+            i += 1
+    return folded
+
+
 def _x_edges(table: Table) -> list[float]:
     return _cluster(x for row in table.rows for c in row if c.rect for x in (c.rect[0], c.rect[2]))
 
@@ -1232,6 +1366,8 @@ def _continues(first: Table, second: Table, height: float) -> bool:
         return False
     count = _header_row_count(first)
     if count and [[_cell_text(c) for c in r] for r in first.rows[:count]] == [[_cell_text(c) for c in r] for r in second.rows[:count]]:
+        return True
+    if _repeats_first_row(first, second):
         return True
     ends = [c.rect[3] for row in first.rows for c in row if c.rect and c.page == max(first.pages)]
     starts = [c.rect[1] for row in second.rows for c in row if c.rect and c.page == second.first_page]
@@ -1299,6 +1435,7 @@ class TaggedPdfConverter:
         import pdfplumber
 
         self.path = Path(path)
+        self._title_given = bool(title)
         self.title = title or self.path.stem.replace("_", " ")
         self.images_dir = Path(images_dir) if images_dir else None
         self.image_prefix = image_ref_prefix or (self.images_dir.name if self.images_dir else "images")
@@ -1335,8 +1472,9 @@ class TaggedPdfConverter:
         """The PDF's own /Title when it is a title and not a leftover (a file name, an editor's default)."""
         value = str((self.pdf.metadata or {}).get("Title") or "").strip()
         if (not value or value.lower().startswith(("microsoft word", "untitled", "document"))
-                or value.lower().endswith((".pdf", ".docx", ".doc", ".indd"))):
-            return ""
+                or value.lower().endswith((".pdf", ".docx", ".doc", ".indd"))
+                or re.sub(r"[\W_]+", "", value).lower() == re.sub(r"[\W_]+", "", self.path.stem).lower()):
+            return ""  # empty, an editor's default, or the file's own name
         return re.sub(r"\s+", " ", value)
 
     # -- availability ------------------------------------------------------------
@@ -1348,7 +1486,7 @@ class TaggedPdfConverter:
 
         try:
             with pdfplumber.open(str(path)) as pdf:
-                if not pdf.structure_tree:
+                if not paged_structure_tree(pdf):
                     return False
                 return any(
                     c.get("mcid") is not None for page in pdf.pages[:3] for c in page.chars
@@ -1385,6 +1523,8 @@ class TaggedPdfConverter:
         counter = iter(range(10**9))
 
         def mcid_pages(node: dict, page: int) -> list[tuple[int, int]]:
+            if node.get("mcid_pages"):  # the tree states each id's page
+                return [(p or page, m) for p, m in node["mcid_pages"]]
             result, previous = [], None
             for mcid in node.get("mcids") or []:
                 if previous is not None and mcid < previous:
@@ -1444,7 +1584,7 @@ class TaggedPdfConverter:
                 if node["type"] == "Table":
                     self.table_owned.update(owner for _, _, owner in found)
 
-        for root in self.pdf.structure_tree:
+        for root in paged_structure_tree(self.pdf):
             visit(root, None)
 
     # -- page content ------------------------------------------------------------
@@ -1481,6 +1621,42 @@ class TaggedPdfConverter:
         mark_underlines(page, made)
         return flow, table_owned
 
+    def _release_misfiled(self, number: int) -> list[Ch]:
+        """A producer can tag the text of a header it repeats on the next page as part of a cell above (the
+        last row of the page before). Text on a later page than its cell that lies outside the cell's column
+        is not that cell's continuation: it is released, to be filed by the page's borders."""
+        released: list[Ch] = []
+        for table in self.tables:
+            for row in table.rows:
+                for cell in row:
+                    if cell.page >= number or cell.rect is None:
+                        continue
+                    outside = {id(ch) for ch in cell.chars
+                               if ch.page == number and not cell.rect[0] - 3 <= (ch.x0 + ch.x1) / 2 <= cell.rect[2] + 3}
+                    if outside:
+                        released += [ch for ch in cell.chars if id(ch) in outside]
+                        cell.chars = [ch for ch in cell.chars if id(ch) not in outside]
+        return released
+
+    def _release_megacells(self, number: int, borders: "PageBorders") -> list[Ch]:
+        """A tagged "cell" that holds the text of a whole grid (a producer that tags a table as one cell and one
+        run of text) is not a cell: the page's borders show cells, and the text of four or more of them in one
+        is released, to be filed by the borders like any text the tags leave out of the table."""
+        released: list[Ch] = []
+        for table in self.tables:
+            for row in table.rows:
+                for cell in row:
+                    if cell.page != number or cell.rect is not None:
+                        continue
+                    boxes = {tuple(round(v) for v in box) for ch in cell.chars if ch.text.strip()
+                             for box in [borders.around([ch])] if box is not None}
+                    if len(boxes) >= 4:
+                        released += cell.chars
+                        cell.chars = []
+            table.rows = [r for r in table.rows
+                          if any(c.chars for c in r) or all(c.page != number for c in r)]
+        return released
+
     def _adopt_orphans(self, chars: list[Ch], number: int, borders: "PageBorders") -> list[Ch]:
         """File table-owned characters that sit inside the page's cell borders as cells of the
         nearest table; return the rest (captions), which stay in the text flow."""
@@ -1514,16 +1690,39 @@ class TaggedPdfConverter:
         for top, cells in sorted(rows.items()):
             cells.sort(key=lambda c: c.rect[0])
             candidates = [t for t in self.tables if number in t.pages]
+            if not candidates:  # a table with pages before and after has this one in between
+                candidates = [t for t in self.tables if min(t.pages, default=number) < number < max(t.pages, default=number)]
             if not candidates:
                 for cell in cells:
                     rest.extend(cell.chars)
                 continue
             table = min(candidates, key=lambda t: span(t, cells[0].rect))
+            # Text the tags leave out of a cell it sits in (some producers tag the first line of a cell apart)
+            # belongs to that cell: the page's borders give it the same box.
+            homeless = []
+            for cell in cells:
+                home = next((c for row in table.rows for c in row if c.page == number and c.rect and cell.rect
+                             and all(abs(a - b) <= _EDGE_TOL for a, b in zip(c.rect, cell.rect))), None)
+                if home is None:
+                    homeless.append(cell)
+                else:
+                    home.chars = cell.chars + home.chars
+            cells = homeless
+            if not cells:
+                continue
 
             def row_key(row: list[Cell]) -> tuple[int, float]:
                 tops = [c.top for cell in row for c in cell.chars if c.text.strip()]
                 return (row[0].page if row else 0, min(tops)) if tops else (0, -1.0)
 
+            # cells whose row is already there (a header row with one cell missing) go into that row
+            sibling = next((row for row in table.rows if row and row[0].page == number
+                            and any(c.rect and abs(c.rect[1] - cells[0].rect[1]) <= _EDGE_TOL for c in row)), None)
+            if sibling is not None:
+                sibling.extend(cells)
+                sibling.sort(key=lambda c: c.rect[0] if c.rect else 1e9)
+                table.pages.add(number)
+                continue
             where = len(table.rows)
             for i, row in enumerate(table.rows):
                 key = row_key(row)
@@ -1531,6 +1730,7 @@ class TaggedPdfConverter:
                     where = i
                     break
             table.rows.insert(where, cells)
+            table.pages.add(number)
         return rest
 
     @staticmethod
@@ -1538,13 +1738,13 @@ class TaggedPdfConverter:
         return tuple(round(image[k]) for k in ("x0", "top", "x1", "bottom"))
 
     def _is_furniture_image(self, image: dict, page: Any) -> bool:
-        """A running header or footer picture, or letterhead: tagged as an artifact and either in the
-        page margin or repeated on several pages. A picture of content can be tagged as an artifact
-        too (a pasted table), so artifacts elsewhere on the page are kept."""
+        """A running header or footer picture: the same picture in the same place on at least half the pages
+        (never fewer than two). That it sits in the margin is not enough: the letterhead on page 1 only is
+        part of the document, not of its page furniture. Tagged content pictures are always kept."""
         if not self.layout and image.get("mcid") is not None:
             return False
-        in_margin = image["bottom"] <= 0.12 * page.height or image["top"] >= 0.88 * page.height
-        return in_margin or self._image_repeats[self._image_key(image)] >= 3
+        needed = max(2, -(-len(self.pdf.pages) // 2))
+        return self._image_repeats[self._image_key(image)] >= needed
 
     @staticmethod
     def _has_prose(page: Any, box: tuple[float, float, float, float]) -> bool:
@@ -1704,6 +1904,22 @@ class TaggedPdfConverter:
 
     # -- assembling blocks -------------------------------------------------------
 
+    def _title_from_the_first_page(self, seq: list[Block]) -> None:
+        """When the PDF names no title (its own is empty, a default, or the file's name), the title is the
+        centred heading that opens page 1: it leaves the body and becomes the AsciiDoc title."""
+        if self.title != self.path.stem.replace("_", " ") or self._title_given:
+            return
+        for block in seq:
+            if block.page != 1 or block.kind == "image":
+                continue
+            if block.kind != "center":
+                return  # something other than a centred heading comes first
+            text = " ".join(plain(u).strip() for u in self._split_center(block)).strip()
+            if 0 < len(text) <= 160 and len(block.lines) <= 4:
+                self.title = text
+                seq.remove(block)
+            return
+
     def _cover_title(self, seq: list[Block]) -> None:
         """The document title of an untagged PDF: the one largest line of text on page 1, when it is much
         larger than the body text. It leaves the body and becomes the AsciiDoc title."""
@@ -1731,7 +1947,7 @@ class TaggedPdfConverter:
         threshold = max(2, -(-len(self.pdf.pages) // 2))  # half the pages, rounded up, never fewer than two
         return {key for key, count in seen.items() if count >= threshold}
 
-    def _layout_tables(self, page: Any, number: int, chars: list[Ch]) -> tuple[list[Table], list[Ch]]:
+    def _layout_tables(self, page: Any, number: int, chars: list[Ch], min_filled: int = 0) -> tuple[list[Table], list[Ch]]:
         """Tables drawn with ruling lines, found by pdfplumber, with the characters inside their cells.
         Returns the tables and the characters left for the text flow."""
         tables: list[Table] = []
@@ -1746,6 +1962,7 @@ class TaggedPdfConverter:
             for rect in cells:
                 members[tuple(rect)] = Cell(header=False, chars=[], rect=tuple(rect), page=number)
             ordered = sorted(members.values(), key=lambda c: (c.rect[1], c.rect[0]))
+            claimed: set[int] = set()
             for ch in chars:
                 if id(ch) in taken:
                     continue
@@ -1753,7 +1970,10 @@ class TaggedPdfConverter:
                 inside = [c for c in ordered if c.rect[0] <= cx < c.rect[2] and c.rect[1] <= cy < c.rect[3]]
                 if inside:
                     min(inside, key=lambda c: (c.rect[2] - c.rect[0]) * (c.rect[3] - c.rect[1])).chars.append(ch)
-                    taken.add(id(ch))
+                    claimed.add(id(ch))
+            if sum(1 for c in ordered if any(ch.text.strip() for ch in c.chars)) < min_filled:
+                continue  # a box or two round some text, not a table
+            taken |= claimed
             rows: list[list[Cell]] = []
             for cell in ordered:
                 if rows and abs(rows[-1][0].rect[1] - cell.rect[1]) <= _EDGE_TOL:
@@ -1837,7 +2057,16 @@ class TaggedPdfConverter:
         seq: list[Block] = []
         for number, page, flow, owned in pages:
             borders = PageBorders(page)
+            owned = owned + self._release_misfiled(number) + self._release_megacells(number, borders)
+            for table in self.tables:  # the boxes of the cells the tags did place, so orphans can join their rows
+                for row in table.rows:
+                    for cell in row:
+                        if cell.page == number and cell.chars and cell.rect is None:
+                            cell.rect = borders.around([ch for ch in cell.chars if ch.page == number] or cell.chars)
             flow += self._adopt_orphans(owned, number, borders)
+            # a grid the tags do not make a table of (all its text in one cell, or none of it tagged as cells)
+            found, flow = self._layout_tables(page, number, flow, min_filled=4)
+            self.tables.extend(found)
             images = self._page_images(page, number)
             flow, legends = self._take_picture_text(flow, images, page, number)
             self.tables.extend(legends)
@@ -1845,7 +2074,7 @@ class TaggedPdfConverter:
                 for row in table.rows:
                     for cell in row:
                         if cell.page == number and cell.chars and cell.rect is None:
-                            cell.rect = borders.around(cell.chars)
+                            cell.rect = borders.around([ch for ch in cell.chars if ch.page == number] or cell.chars)
 
             flow, labels = take_margin_labels(flow)
             lines = [ln for ln in group_lines(flow) if not self._skip(plain(line_units(ln)))]
@@ -1856,7 +2085,7 @@ class TaggedPdfConverter:
             for t, table in enumerate(self.tables):
                 if number in table.pages:
                     tops = [c.top for row in table.rows for cell in row if cell.page == number
-                            for c in cell.chars if c.text.strip()]
+                            for c in cell.chars if c.text.strip() and c.page == number]
                     if tops:
                         items.append(Block(kind="table", page=number, top=table.top if table.legend else min(tops),
                                            bottom=max(tops), payload=t))
@@ -1902,6 +2131,9 @@ class TaggedPdfConverter:
                     and block.payload != previous.payload):
                 first, second = self.tables[previous.payload], self.tables[block.payload]
                 if _continues(first, second, self.pdf.pages[second.first_page - 1].height):
+                    if _repeats_first_row(first, second):  # it is the header, so both copies are one
+                        for cell in first.rows[0] + second.rows[0]:
+                            cell.header = True
                     shift = _x_edges(first)[0] - _x_edges(second)[0]
                     for row in second.rows:  # into line with the first part, so the columns are one set
                         for cell in row:
@@ -2073,7 +2305,7 @@ class TaggedPdfConverter:
 
     def _render_cell(self, cell: Cell) -> tuple[str, bool]:
         """(text, needs AsciiDoc cell style) for one table cell."""
-        lines = [ln for ln in group_lines(cell.chars) if not ln.blank]
+        lines = [ln for ln in group_lines(unrotate(cell.chars)) if not ln.blank]
         paragraphs: list[list[Line]] = []
         for line in lines:
             previous = paragraphs[-1][-1] if paragraphs else None
@@ -2120,8 +2352,37 @@ class TaggedPdfConverter:
             return ">"
         return ""
 
+    def _join_split_rows(self, table: Table) -> int:
+        """A row that a page break cuts in two: the next page starts with the rest of one or more of its cells,
+        in their own columns, and the text carries on (it stops short of a full stop, and the rest starts in
+        lower case). The rest joins the cells it continues. Returns the rows joined."""
+        joined, i = 0, 1
+        while i < len(table.rows):
+            above, below = table.rows[i - 1], table.rows[i]
+            if not (above and below and all(c.rect for c in above + below) and below[0].page == above[0].page + 1
+                    and len(below) < len(above)):
+                i += 1
+                continue
+            pairs = []
+            for cell in below:
+                mid = (cell.rect[0] + cell.rect[2]) / 2
+                twin = next((a for a in above if a.rect[0] - 2 <= mid <= a.rect[2] + 2), None)
+                pairs.append((twin, cell))
+            carries = [t for t, c in pairs if t is not None and plain(group_lines_text(t)).rstrip()[-1:] not in ".?!:;)"
+                       and plain(group_lines_text(c)).lstrip()[:1].islower()]
+            if all(t is not None for t, _ in pairs) and carries:
+                for twin, cell in pairs:
+                    twin.chars = twin.chars + cell.chars
+                del table.rows[i]
+                joined += 1
+            else:
+                i += 1
+        return joined
+
     def _render_table(self, table: Table, page_width: float) -> str:
         _drop_repeated_headers(table)
+        _fold_rows_in_the_same_box(table)
+        self._join_split_rows(table)
         note = ""
         stated = any(c.tag_colspan > 1 or c.tag_rowspan > 1 for row in table.rows for c in row)
         saved = [[dataclasses.replace(c, chars=list(c.chars)) for c in row] for row in table.rows]
@@ -2133,8 +2394,12 @@ class TaggedPdfConverter:
             if not _assign_grid(table):
                 table.rows[:] = saved
                 if not _grid_from_tags(table):
-                    _pad_rows(table)
-                    note = "// Cell spans could not be recovered from the page borders; row layout may differ.\n"
+                    if _columns_by_position(table):
+                        note = "// Cell spans were placed by where cells start; compare with the page.\n"
+                    else:
+                        _pad_rows(table)
+                        note = "// Cell spans could not be recovered from the page borders; row layout may differ.\n"
+        _infer_header(table)
         known = [c for row in table.rows for c in row if c.rect]
         x_edges = _cluster(x for c in known for x in (c.rect[0], c.rect[2])) if known else []
         ncols = max(len(x_edges) - 1, max(sum(c.colspan for c in row) for row in table.rows))
@@ -2264,7 +2529,8 @@ class TaggedPdfConverter:
                 continue
             x0, top, x1, bottom = block.payload[1]
             cx, cy = (x0 + x1) / 2, (top + bottom) / 2
-            home = next((c for t in self.tables if block.page in t.pages for row in t.rows for c in row
+            home = next((c for t in self.tables if block.page in t.pages and any(ch.chars for r in t.rows for ch in r)
+                         for row in t.rows for c in row
                          if c.page == block.page and c.rect and c.rect[0] <= cx <= c.rect[2]
                          and c.rect[1] <= cy <= c.rect[3]), None)
             if home is None:
@@ -2435,33 +2701,54 @@ class TaggedPdfConverter:
 
         out: list[Block] = []
         taken: set[int] = set()
+        consumed: set[int] = set()  # later lines of a caption set in several blocks
         for i, block in enumerate(seq):
+            if id(block) in consumed:
+                continue
             if block.kind not in ("para", "center") or block.callout is not None or len(block.lines) > 3:
                 out.append(block)
                 continue
             text = plain(block.units).strip()
             match = _CAPTION_RE.match(text)
+            label_units = [st for t, st in block.units[:len(match.group("label").rstrip(".:\u2013\u2014- ")) if match else 0] if st]
             styled = bold_share(block.units) >= 0.9 or all(s is not None and s[1] for _, s in block.units if s) \
-                or block.kind == "center" or self.owner_kind.get(block.owner) == "Caption"
+                or block.kind == "center" or self.owner_kind.get(block.owner) == "Caption" \
+                or (bool(label_units) and (all(st[0] for st in label_units) or all(st[1] for st in label_units)
+                                           or all(len(st) > 4 and st[4] for st in label_units)))  # only "Table 1" is set apart
             if not match or not styled:
                 out.append(block)
                 continue
             first = match.group("word") == "Table"
+            # a caption can run to a second line that the tags make a paragraph of its own
+            extra: list[Block] = []
+            j = i + 1
+            while j < len(seq) and seq[j].kind == "para" and seq[j].callout is None and not seq[j].label \
+                    and abs(seq[j].x0 - block.x0) <= 2 and abs(seq[j].size - block.size) <= 0.6 \
+                    and len(seq[j].lines) <= 2 and not _CAPTION_RE.match(plain(seq[j].units).strip()) \
+                    and 0 <= seq[j].top - (extra[-1] if extra else block).lines[-1].baseline <= 0.9 * seq[j].size:
+                extra.append(seq[j])
+                j += 1
+            if extra and not (j < len(seq) and seq[j].kind in ("table", "image")):
+                extra, j = [], i + 1  # not followed by a table or picture after all: they are paragraphs
+            last = extra[-1] if extra else block
             def clear(j: int, step: int) -> int:
                 """Past a legend table: it belongs to the picture, which the caption is for."""
                 while 0 <= j < len(seq) and not first and seq[j].kind == "table" and self.tables[seq[j].payload].legend:
                     j += step
                 return j
 
-            options = [("after", i + 1), ("before", i - 1)] if first else [("before", clear(i - 1, -1)), ("after", clear(i + 1, 1))]
+            options = [("after", j), ("before", i - 1)] if first else [("before", clear(i - 1, -1)), ("after", clear(j, 1))]
             partner = None
             for side, j in options:
                 if not 0 <= j < len(seq) or j in taken or seq[j].kind not in ("table", "image") \
                         or seq[j].caption is not None:
                     continue
                 page, edge = reach(seq[j], side)
-                near = (edge - block.bottom) if side == "after" else (block.top - edge)
-                if page == block.page and -4 <= near <= 48:
+                near = (edge - last.bottom) if side == "after" else (block.top - edge)
+                height = self.pdf.pages[block.page - 1].height
+                # a caption at the foot of a page, its table at the top of the next
+                over = side == "after" and page == block.page + 1 and last.bottom > 0.8 * height and edge < 0.2 * height
+                if (page == block.page and -4 <= near <= 48) or over:
                     partner = (side, j)
                     break
             if partner is None:
@@ -2476,6 +2763,10 @@ class TaggedPdfConverter:
             whole_italic = all(st[1] for _, st in block.units if st)
             title = [(t, (False, bool(st[1]) and not whole_italic, st[2]) if st else None)
                      for t, st in block.units[cut:]]
+            for more in extra:  # the caption's later lines
+                title += [(" ", None)] + [(t, (False, bool(st[1]) and not whole_italic, st[2]) if st else None)
+                                          for t, st in more.units]
+                consumed.add(id(more))
             label = f"{match.group('label')} "
             slug = f"{'figure' if match.group('word') in ('Figure', 'Fig.') else match.group('word').lower()}-" \
                    + re.sub(r"[^a-z0-9]+", "-", match.group("number").lower()).strip("-")
@@ -2684,6 +2975,8 @@ class TaggedPdfConverter:
             self.title = plain(tagged[0].units)
             seq.remove(tagged[0])
             tagged = tagged[1:]
+        else:
+            self._title_from_the_first_page(seq)
         # Tag levels become consecutive section levels, so a document that starts at H3 gets "==" and
         # never skips a level (Asciidoctor warns about "section title out of sequence").
         ranks = {level: 2 + i for i, level in enumerate(sorted({b.level for b in tagged}))}

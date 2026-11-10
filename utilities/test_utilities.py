@@ -8,6 +8,8 @@ skip themselves when ``asciidoctor`` is not installed.
 
 from __future__ import annotations
 
+import collections
+import dataclasses
 import shutil
 import subprocess
 import sys
@@ -351,6 +353,8 @@ def converter_with(tables: list[m.Table] | None = None) -> m.TaggedPdfConverter:
     converter.tables = tables or []
     converter.owner_kind = {}
     converter._captioned = set()
+    converter._callouts = 0
+    converter.pdf = type("P", (), {"pages": [type("G", (), {"width": 612, "height": 792})()] * 40})()
     return converter
 
 
@@ -676,6 +680,244 @@ class Checker(unittest.TestCase):
         block = cf._with_labels('[IMPORTANT,caption="Attention"]\n====\nFirst.\n====')
         self.assertEqual(block, "[NOTE]\n====\nAttention: First.\n====")
         self.assertEqual(cf._with_labels("NOTE: plain"), "NOTE: plain")
+
+
+def cut_chars(words: str, top: float, size: float = 10.0) -> list[dict]:
+    """Upright characters of one cell's text, one line per word, from ``top`` down."""
+    chars: list[dict] = []
+    for line, word in enumerate(words.split()):
+        for k, ch in enumerate(word):
+            chars.append({"text": ch, "x0": 100 + k * 5.0, "x1": 105 + k * 5.0, "top": top + line * 12.0,
+                          "bottom": top + line * 12.0 + size, "size": size, "upright": True})
+    return chars
+
+
+def node(kind: str, children: list[dict] | None = None, marks: list[tuple[int, int]] | None = None) -> dict:
+    return {"type": kind, "children": children or [], "mcid_pages": marks or []}
+
+
+class TableContinuations(unittest.TestCase):
+    """A cell cut by a page break: its tail is checked inside its own cell, not as part of the page's order."""
+
+    def test_finds_the_tails_of_cut_cells(self) -> None:
+        table = node("Table", [node("TR", [node("TD", marks=[(5, 1)]), node("TD", marks=[(5, 2)])])])
+        tail = node("Table", marks=[(6, 3)])  # no rows of its own, on the page after the table
+        far = node("Table", marks=[(20, 9)])  # no table runs here
+        spanning = node("Table", [node("TR", [node("TD", marks=[(13, 10), (14, 11)])])])
+        tree = [node("Document", [table, tail, far, spanning])]
+        self.assertEqual(cf._continuation_runs(tree), {(6, 3), (14, 11)})
+
+    def test_a_cell_is_cut_where_the_reading_position_jumps_back_up(self) -> None:
+        left = cut_chars("alpha beta gamma", 50)
+        right = cut_chars("delta epsilon", 50)
+        pieces = cf._split_cells(left + right)
+        self.assertEqual([cf.tokens(cf._run_text(p)) for p in pieces], [["alpha", "beta", "gamma"], ["delta", "epsilon"]])
+        sideways = [dict(c, upright=False) for c in left + right]
+        self.assertEqual(len(cf._split_cells(sideways)), 1)
+
+    def test_neighbouring_tag_cells_join_only_to_exactly_one_converted_cell(self) -> None:
+        known = {cf.cell_key("Endogenous and urine additives"), cf.cell_key("Other")}
+        rows = [["Endogenous and urine", "additives"], ["Other", "x"]]
+        self.assertEqual(cf._join_whole_cells(rows, known)[0], ["Endogenous and urine additives"])
+        self.assertEqual(cf._join_whole_cells(rows, known)[1], ["Other", "x"])  # "Other" is a cell already
+        self.assertEqual(cf._join_whole_cells([["Endogenous", "additives"]], known), [["Endogenous", "additives"]])
+
+    def _stub(self, adoc_cells: list[list[str]]) -> tuple[Any, Any]:
+        """Page 1 holds the first part of cell A and all of cell B; page 2 holds both tails, one after the other."""
+        import types
+
+        runs = [(1, 1, "alpha beta"), (1, 2, "gamma delta epsilon"), (2, 3, "theta iota kappa lambda")]
+        chars = {1: {1: cut_chars("alpha beta", 50), 2: cut_chars("gamma delta epsilon", 50)},
+                 2: {3: cut_chars("theta iota", 50) + cut_chars("kappa lambda", 50)}}
+        pdf = types.SimpleNamespace(
+            page_count=2, tag_runs=[(p, m, cf.tokens(t)) for p, m, t in runs], mcid_chars=chars,
+            tag_page_words=[cf.tokens("alpha beta gamma delta epsilon"), cf.tokens("theta iota kappa lambda")],
+            continuations={(2, 3)}, repeated_header_words=[], tag_repeated_words=[], image_pages={},
+            furniture=set(), layout_order_words=None)
+        words = [w for row in adoc_cells for c in row for w in cf.tokens(c)]
+        adoc = types.SimpleNamespace(words=words, tables=[{"rows": adoc_cells, "spans": 0}])
+        return pdf, adoc
+
+    def test_a_cut_cell_read_whole_is_in_order(self) -> None:
+        pdf, adoc = self._stub([["alpha beta theta iota", "gamma delta epsilon kappa lambda"]])
+        result = cf.check_text(pdf, adoc)
+        self.assertEqual(result["order_recall"], 1.0)
+        self.assertEqual(result["in_cells"], {"runs": 1, "words": 4, "in_order": 4})
+        self.assertEqual(result["content_recall"], 1.0)
+
+    def test_words_of_a_tail_out_of_order_inside_their_cell_are_reported(self) -> None:
+        pdf, adoc = self._stub([["alpha beta iota theta", "gamma delta epsilon kappa lambda"]])
+        self.assertLess(cf.check_text(pdf, adoc)["order_recall"], 1.0)
+
+    def test_a_run_that_does_not_read_as_cells_is_left_to_the_main_check(self) -> None:
+        pdf, adoc = self._stub([["alpha beta", "gamma delta epsilon"], ["theta", "iota", "kappa", "lambda"]])
+        result = cf.check_text(pdf, adoc)
+        self.assertEqual(result["in_cells"]["runs"], 0)
+        self.assertEqual(result["order_recall"], 1.0)  # still in order as a whole
+
+
+class Tables2(unittest.TestCase):
+    """Rules found with the second set of documents."""
+
+    @staticmethod
+    def cell(text: str, x0: float, top: float, x1: float, bottom: float = 0.0, page: int = 1, header: bool = False) -> m.Cell:
+        bottom = bottom or top + 20
+        chars = make_line(text, x0 + 2, top + 2, size=8).chars
+        for ch in chars:
+            ch.page = page
+        return m.Cell(header=header, chars=chars, rect=(x0, top, x1, bottom), page=page)
+
+    def test_a_row_repeated_at_the_top_of_the_next_page_is_the_header_whatever_its_style(self) -> None:
+        first = m.Table(rows=[[self.cell("Substance", 0, 0, 100), self.cell("Limit", 100, 0, 200)],
+                              [self.cell("Glucose", 0, 20, 100), self.cell("250", 100, 20, 200)]], pages={1}, first_page=1)
+        second = m.Table(rows=[[self.cell("Substance", 0, 0, 100, page=2), self.cell("Limit", 100, 0, 200, page=2)],
+                               [self.cell("Biotin", 0, 20, 100, page=2), self.cell("4250", 100, 20, 200, page=2)]], pages={2}, first_page=2)
+        self.assertTrue(m._repeats_first_row(first, second))
+        self.assertTrue(m._continues(first, second, 792))
+        other = m.Table(rows=[[self.cell("Name", 0, 0, 100, page=2), self.cell("Value", 100, 0, 200, page=2)]], pages={2}, first_page=2)
+        self.assertFalse(m._repeats_first_row(first, other))
+
+    def test_a_line_tagged_as_a_row_of_its_own_returns_to_the_cell_it_sits_in(self) -> None:
+        table = m.Table(rows=[
+            [self.cell("Traceability", 0, 0, 100, 50), self.cell("serum and NIST SRM 914", 100, 0, 200, 50)],
+            [self.cell("NIST SRM 967 for", 100, 0, 200, 50)],
+        ], pages={1}, first_page=1)
+        self.assertEqual(m._fold_rows_in_the_same_box(table), 1)
+        self.assertEqual(len(table.rows), 1)
+        self.assertIn("NISTSRM967for", m._cell_text(table.rows[0][1]))
+
+    def test_the_rest_of_a_cell_cut_by_a_page_break_joins_the_cell(self) -> None:
+        converter = converter_with()
+        above = [self.cell("Intended use", 0, 600, 100, 700), self.cell("used in the differential", 100, 600, 200, 700)]
+        below = [self.cell("evaluating a patient.", 100, 40, 200, 80, page=2)]
+        table = m.Table(rows=[above, below], pages={1, 2}, first_page=1)
+        self.assertEqual(converter._join_split_rows(table), 1)
+        self.assertEqual(len(table.rows), 1)
+        # a next row that starts a new sentence is a row of its own
+        table = m.Table(rows=[[self.cell("Intended use", 0, 600, 100, 700), self.cell("is a test.", 100, 600, 200, 700)],
+                              [self.cell("Evaluating a patient.", 100, 40, 200, 80, page=2)]], pages={1, 2}, first_page=1)
+        self.assertEqual(converter._join_split_rows(table), 0)
+
+    def test_cells_with_no_borders_to_explain_them_go_where_they_start(self) -> None:
+        table = m.Table(rows=[
+            [self.cell("Virus", 0, 0, 100, 20), self.cell("Strain", 100, 0, 200, 20), self.cell("Result", 200, 0, 300, 20)],
+            [self.cell("A/WS/33", 100, 20, 200, 40), self.cell("NEG", 200, 20, 300, 40)],  # the virus cell spans down
+        ], pages={1}, first_page=1)
+        self.assertTrue(m._columns_by_position(table))
+        self.assertEqual([c.colspan for c in table.rows[1]], [1, 1, 1])
+        self.assertEqual(m._cell_text(table.rows[1][0]), "")  # a blank where the cell above spans down
+        self.assertEqual(m._cell_text(table.rows[1][1]), "A/WS/33")
+
+    def test_text_on_its_side_reads_along_its_own_direction(self) -> None:
+        chars = []
+        for i, letter in enumerate("Virus"):  # reads from the bottom up: each letter higher on the page
+            ch = m.Ch(letter, 50, 100 - 6 * i - 6, 58, 100 - 6 * i, 8.0, False, False, None, 1)
+            ch.rot = 90
+            chars.append(ch)
+        line = [ln for ln in m.group_lines(m.unrotate(chars)) if not ln.blank]
+        self.assertEqual(len(line), 1)
+        self.assertEqual(m.plain(m.line_units(line[0])), "Virus")
+
+    def test_a_caption_with_only_its_label_in_bold_and_a_second_line_is_one_caption(self) -> None:
+        converter = converter_with()
+        label = make_line("Table 19", 72, 100, bold=True).chars
+        rest = make_line(". Summary of Detections for the Test", 72 + 8 * 5, 100).chars
+        caption = m._lines_to_block([m.Line(label + rest, 100, 110, 72, 300, 10.0, 110, None, 1)])
+        second = m._lines_to_block([make_line("Test of 2016 and 2022", 72, 112)])
+        cell = m.Cell(header=False, chars=[], rect=(72, 130, 300, 200), page=1)
+        table = m.Table(rows=[[cell]], pages={1}, first_page=1)
+        converter.tables = [table]
+        block = m.Block(kind="table", page=1, top=130, bottom=130, payload=0)
+        seq = converter._attach_captions([caption, second, block])
+        self.assertEqual([b.kind for b in seq], ["table"])
+        self.assertEqual(block.caption[0], "Table 19. ")
+        self.assertIn("Test of 2016 and 2022", block.caption[2])
+
+
+class Numbering(unittest.TestCase):
+    def test_the_next_number_starts_an_item_even_after_a_web_address(self) -> None:
+        lines = [make_line("9. Centers for Disease Control. Biosafety. http://www.cdc.gov/biosafety/", 72, 100, size=10),
+                 make_line("10. Clinical and Laboratory Standards Institute.", 72, 112, size=10)]
+        blocks = m.flow_blocks(lines)
+        self.assertEqual(len(blocks), 2)
+        wrapped = [make_line("The set is (1) of the lot and", 72, 100, size=10),
+                   make_line("2. other things that follow", 72, 112, size=10)]
+        self.assertEqual(len(m.flow_blocks(wrapped)), 1)  # a number that does not follow the opening label's
+
+
+class HeadersAndFurniture(unittest.TestCase):
+    cell = staticmethod(Tables2.cell)
+
+    def test_a_table_of_figures_under_a_row_of_labels_gets_a_header(self) -> None:
+        rows = [[self.cell("Sample", 0, 0, 80), self.cell("Mean", 80, 0, 160), self.cell("SD", 160, 0, 240)]]
+        for i in range(4):
+            rows.append([self.cell(f"Control {i}", 0, 20 * (i + 1), 80), self.cell("1.42", 80, 20 * (i + 1), 160),
+                         self.cell("0.015", 160, 20 * (i + 1), 240)])
+        table = m.Table(rows=rows, pages={1}, first_page=1)
+        self.assertEqual(m._infer_header(table), 1)
+        self.assertTrue(all(c.header for c in table.rows[0]))
+
+    def test_names_and_values_are_not_given_a_header(self) -> None:
+        rows = [[self.cell("Brand Name", 0, 0, 80), self.cell("GeneXpert", 80, 0, 160)],
+                [self.cell("Primary DI Number", 0, 20, 80), self.cell("07332940008581", 80, 20, 160)],
+                [self.cell("Issuing Agency", 0, 40, 80), self.cell("GS1", 80, 40, 160)],
+                [self.cell("Device Count", 0, 60, 80), self.cell("1", 80, 60, 160)]]
+        table = m.Table(rows=rows, pages={1}, first_page=1)
+        self.assertEqual(m._infer_header(table), 0)
+
+    def test_a_repeated_header_with_a_cell_missing_is_still_the_header(self) -> None:
+        import check_fidelity as cf
+        above = [["virus", "strain", "targetconc", "result"], ["sarscov2", "flua", "flub", "rsv"]]
+        below = [["virus", "targetconc", "result"], ["sarscov2", "flua", "flub", "rsv"]]  # "Strain" tagged elsewhere
+        self.assertTrue(cf._same_header(above, below))
+        self.assertFalse(cf._same_header(above, [["name", "value"], ["a", "b"]]))
+
+    def test_text_tagged_into_the_cell_above_but_outside_its_column_is_released(self) -> None:
+        converter = converter_with()
+        cell = self.cell("100 copies", 310, 100, 400, 130, page=13)
+        strays = make_line("Strain", 200, 50, size=8).chars  # the next page's header cell, tagged here
+        for ch in strays:
+            ch.page = 14
+        cell.chars += strays
+        converter.tables = [m.Table(rows=[[cell]], pages={13, 14}, first_page=13)]
+        out = converter._release_misfiled(14)
+        self.assertEqual("".join(c.text for c in out), "Strain")
+        self.assertEqual("".join(c.text for c in cell.chars), "100 copies")
+        # a continuation in the cell's own column stays
+        cell.chars += [dataclasses.replace(c, x0=330, x1=335) for c in make_line("rest", 330, 40, size=8).chars]
+        for ch in cell.chars:
+            ch.page = ch.page if ch.page == 13 else 14
+        converter._release_misfiled(14)
+        self.assertIn("rest", "".join(c.text for c in cell.chars))
+
+    def test_a_margin_picture_is_furniture_only_when_it_repeats(self) -> None:
+        converter = object.__new__(m.TaggedPdfConverter)
+        converter.layout = False
+        converter.pdf = type("P", (), {"pages": [object()] * 10})()
+        image = {"x0": 47, "top": 21, "x1": 238, "bottom": 58}
+        key = m.TaggedPdfConverter._image_key(image)
+        converter._image_repeats = collections.Counter({key: 1})
+        self.assertFalse(converter._is_furniture_image(image, None))  # the letterhead of page 1 alone
+        converter._image_repeats = collections.Counter({key: 9})
+        self.assertTrue(converter._is_furniture_image(image, None))  # a running header
+
+    def test_a_missing_title_is_the_centred_heading_that_opens_page_one(self) -> None:
+        converter = object.__new__(m.TaggedPdfConverter)
+        converter.path = Path("K210452.pdf")
+        converter.title = "K210452"
+        converter._title_given = False
+        heading = m._lines_to_block([make_line("510(k) DECISION SUMMARY", 150, 90, bold=True)])
+        heading.kind = "center"
+        body = m._lines_to_block([make_line("A paragraph", 72, 140)])
+        seq = [heading, body]
+        converter._title_from_the_first_page(seq)
+        self.assertEqual(converter.title, "510(k) DECISION SUMMARY")
+        self.assertEqual(seq, [body])
+        converter.title, converter._title_given = "Given title", True
+        again = [m._lines_to_block([make_line("Other", 150, 90)])]
+        again[0].kind = "center"
+        converter._title_from_the_first_page(again)
+        self.assertEqual(converter.title, "Given title")
 
 
 class Sizes(unittest.TestCase):

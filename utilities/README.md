@@ -67,6 +67,22 @@ repeats that header on every page again. A header with a cell spanning down (a t
 the AsciiDoc header row, so its cells become row headers (`h`). Where the tags state spans (a Chrome
 export does) they are used when the page borders do not explain the cells.
 
+**Tables the tags get wrong** (tagged engine): each marked-content id's page is read from the structure tree
+(`structure_pages.py`), not guessed from where the ids restart. A row repeated at the top of the next page is the
+header whatever its style. Text the tags leave out of a table (a page of it tagged as one run, or all of it in one
+"cell") is filed by the page's borders; a ruled grid left in the text is a table. A row tagged apart whose box is a
+cell's box joins that cell, and the rest of a row a page break cut joins the cell it continues. Text on its side
+is read along its own direction. When borders cannot explain the spans, cells go in the column they start in.
+Text tagged into a cell above, on a later page and outside that cell's column (a header cell the producer tags
+as part of the previous row), is released and filed by the borders into the row it sits in. A table of figures
+whose top rows have none (and no tag or bold marks them) gets those rows as its header; a table of names and
+values does not.
+
+**Furniture and titles**: a picture is page furniture only when the same picture sits in the same place on at
+least half the pages (never fewer than two): a letterhead on page 1 alone is kept as a picture. When the PDF
+names no title (its own is empty, an editor default, or the file's name), the title is the centred heading
+that opens page 1.
+
 **Callouts** (both engines) become admonitions. A bold "Note", "Important", "Warning", "Caution" or "Tip"
 set in the margin beside a box (taken out before lines are grouped, since it would join the lines above and
 below it) marks the paragraphs between the rules above and below it, or else the paragraph beside it;
@@ -193,6 +209,15 @@ Always review output against the source (`check_fidelity.py`, then the page imag
   Spans are checked only through cells per row.
 - **Pictures**: pages with a picture are flagged; its text is not in the text layer. OCR tables show
   as AsciiDoc tables with no tagged match.
+- **Reading order of a tagged PDF** is judged on the tag order, with a run that holds several columns put column by
+  column. A cell the tags split over a page break reads page by page there and whole in the AsciiDoc, so the rest of
+  such a cell (a table run on the next page outside the cells that began on the previous one, or the later-page
+  marks of a cell spanning pages) is judged on its own: cut into the cells it holds where the reading position jumps
+  back up the page, each checked in order against the AsciiDoc cell sharing most of its words. A run that does not cut
+  into cells reading in order stays in the main check, and the words of every run still count for content recall.
+  The report names how many words were judged this way.
+- **Table cells** the tags split in two that the page draws as one (a label spanning two columns) count as one when
+  the two read together exactly as one AsciiDoc cell and neither part is a cell of the AsciiDoc itself.
 - **Links, pictures, captions, callouts**: each is counted in the PDF with code of the checker's own, not the
   converter's, so a shared mistake cannot hide. Link annotations to web or mail addresses against the
   AsciiDoc's links (distinct targets; a missing one fails); pictures and curve drawings against image
