@@ -4,6 +4,8 @@ IKE documentation project: sources are decomposed into a topic library (`topics/
 reassembled by assemblies (`assemblies/`). **[README.md](README.md) is the source of truth** for
 layout, fragment format, registry, assemblies, ingestion workflow and build commands; read it first.
 
+To ingest a document, use the `ingest-document` skill (`.claude/skills/ingest-document/`).
+
 ## Initial setup — always do this first
 
 Run `mvn validate`. It unpacks the IKE build standards into `.claude/standards/` (build artifacts:
