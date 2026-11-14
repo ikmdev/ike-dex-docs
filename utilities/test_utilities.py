@@ -968,6 +968,137 @@ class Marks(unittest.TestCase):
         self.assertIn("Overflow bulb", m.plain(picture.units))
 
 
+def cell_chars(text: str, page: int, top: float = 10.0, bold: bool = False) -> list[m.Ch]:
+    return [m.Ch(t, 10 + 5 * k, 15 + 5 * k, top, top + 10, 10.0, bold, False, None, page) for k, t in enumerate(text)]
+
+
+class PageBreakSpans(unittest.TestCase):
+    """A cell a page break cuts goes on over the break: it spans the first row of the next page too."""
+
+    def converter(self) -> m.TaggedPdfConverter:
+        return object.__new__(m.TaggedPdfConverter)
+
+    def test_a_cell_with_nothing_under_it_on_the_next_page_spans_the_row(self) -> None:
+        first = make_table([["Group", "Value"], ["Alpha", "1"]], page=1, top=700, x=(0, 100, 200))
+        second = make_table([["2"]], page=2, top=40, header=0, x=(100, 200))  # nothing in the first column
+        first.rows += second.rows
+        text = self.converter()._render_table(first, 612)
+        self.assertIn(".2+|Alpha", text)
+        self.assertNotIn("| |2", text)
+        self.assertIn("\n|2", text)
+
+    def test_empty_cells_that_are_really_there_stay(self) -> None:
+        rows = make_table([["Group", "Value"], ["Alpha", "1"]], page=1, top=700, x=(0, 100, 200))
+        rows.rows.append([m.Cell(header=False, chars=[], rect=(0, 100, 100, 120), page=1), m.Cell(header=False, chars=cell_chars("2", 1), rect=(100, 100, 200, 120), page=1)])
+        text = self.converter()._render_table(rows, 612)
+        self.assertNotIn(".2+", text)  # same page, empty box of its own: a real empty cell
+
+
+class SplitHeaders(unittest.TestCase):
+    def test_a_header_word_filed_with_the_row_above_goes_back(self) -> None:
+        table = make_table([["Virus", "Result"], ["a", "POS"], ["b", "NEG"], ["Virus", "ult"], ["c", "NEG"]], page=1, header={0, 3})
+        table.rows[2][1].chars += cell_chars("Res", 2)  # the tags file "Res" of the repeated header with the row above
+        for cell in table.rows[3]:
+            cell.page = 2
+        for ch in table.rows[3][1].chars:
+            ch.page = 2
+        self.assertEqual(m._drop_repeated_headers(table), 1)
+        self.assertEqual([[m._cell_text(c) for c in r] for r in table.rows], [["Virus", "Result"], ["a", "POS"], ["b", "NEG"], ["c", "NEG"]])
+
+
+class Footnotes(unittest.TestCase):
+    def test_a_raised_mark_after_a_value_is_a_superscript(self) -> None:
+        line = make_line("2d", 10, 100, size=8.1)
+        line.chars[0].top += 2.1
+        line.chars[0].bottom += 2.1   # a cell's text: the value sits low, the mark high, and the median is between
+        line.chars[1].top -= 2.1
+        line.chars[1].bottom -= 2.1
+        line.baseline = 100 + 8.1
+        self.assertEqual(m.render_units(m.line_units(line)), "2^d^")
+
+    def test_a_footnote_line_opens_a_paragraph(self) -> None:
+        first = make_line("a Results on a molecular test", 72, 100)
+        wrapped = make_line("negative", 80, 111)  # set in under the mark
+        note = make_line("b Results on a second test", 72, 122)
+        for ln in (first, note):
+            ln.chars[0].size, ln.chars[0].top, ln.chars[0].bottom = 6.0, ln.top - 3, ln.top + 3
+        self.assertFalse(m._layout_break(first, wrapped, first, 0.0))
+        self.assertTrue(m._layout_break(wrapped, note, first, 0.0))
+
+
+class HeaderBands(unittest.TestCase):
+    def converter(self) -> m.TaggedPdfConverter:
+        return object.__new__(m.TaggedPdfConverter)
+
+    def test_a_second_header_band_after_data_means_no_header_group(self) -> None:
+        rows = [["Group 2021", "NPS", "NS"], ["Female", "1", "2"], ["Male", "3", "4"], ["Group 2016", "NPS", "NS"], ["Female", "5", "6"]]
+        table = make_table(rows, page=1, header={0, 3}, x=(0, 100, 200, 300))
+        self.assertTrue(m._header_band_again(table))
+        text = self.converter()._render_table(table, 612)
+        self.assertIn("options=noheader", text)
+        self.assertEqual(text.count("|==="), 2)  # one table, so the caption is for all of it
+
+    def test_a_banner_row_is_not_a_header_band(self) -> None:
+        rows = [["Name", "Value", "Note"], ["Viruses", "", ""], ["Alpha", "1", "x"], ["Bacteria", "", ""], ["Beta", "2", "y"]]
+        table = make_table(rows, page=1, header={0, 1, 3}, x=(0, 100, 200, 300))
+        self.assertFalse(m._header_band_again(table))
+
+
+class AlignedColumns(unittest.TestCase):
+    def test_an_item_and_its_quantity_are_a_borderless_table(self) -> None:
+        lines = [make_line("Lysis Reagent", 100, 100, size=9), make_line("1.0 mL per cartridge", 400, 100, size=9),
+                 make_line("Binding Reagent", 100, 120, size=9), make_line("1.0 mL per cartridge", 400, 120, size=9),
+                 make_line("Wash Reagent", 100, 140, size=9), make_line("0.4 mL per cartridge", 400, 140, size=9),
+                 make_line("A sentence below the list set in a different size", 100, 200, size=12)]
+        rest, tables = m.aligned_columns(lines, 1, 612)
+        self.assertEqual(len(tables), 1)
+        self.assertTrue(tables[0].borderless)
+        self.assertEqual([[m._cell_text(c) for c in r] for r in tables[0].rows],
+                         [["LysisReagent", "1.0mLpercartridge"], ["BindingReagent", "1.0mLpercartridge"], ["WashReagent", "0.4mLpercartridge"]])
+        self.assertEqual(len(rest), 1)
+
+    def test_running_text_in_two_columns_is_not_a_table(self) -> None:
+        text = "a line of running text that fills most of a column"
+        lines = []
+        for k in range(4):
+            lines += [make_line(text, 72, 100 + 12 * k, size=9), make_line(text, 320, 100 + 12 * k, size=9)]
+        self.assertEqual(m.aligned_columns(lines, 1, 612)[1], [])
+
+
+class Renderer(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("asciidoctor"), "asciidoctor not installed")
+    def test_a_paragraph_asciidoctor_drops_is_guarded_and_found(self) -> None:
+        import tempfile
+
+        line = "[.underline]##Labeler Number##: 956711444 link:https://example.org/terms[Terms of Use]"
+        self.assertTrue(m.guard_line_start(line).startswith("{empty}"))
+        with tempfile.TemporaryDirectory() as tmp:
+            bare, guarded = Path(tmp) / "bare.adoc", Path(tmp) / "guarded.adoc"
+            bare.write_text(f"= T\n\n{line}\n\nAfter.\n", encoding="utf-8")
+            guarded.write_text(f"= T\n\n{m.guard_line_start(line)}\n\nAfter.\n", encoding="utf-8")
+            self.assertTrue(cf.check_rendering(bare, cf.AsciiDocModel(bare))["lost_runs"])
+            self.assertEqual(cf.check_rendering(guarded, cf.AsciiDocModel(guarded))["lost_runs"], [])
+
+    def test_a_table_written_without_frame_or_grid_is_text_in_order(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.adoc"
+            path.write_text("= T\n\nBefore.\n\n[cols=\"1,1\",frame=none,grid=none]\n|===\n|Item |Qty\n|===\n\n[cols=\"1,1\"]\n|===\n|Ruled |Cell\n|===\n", encoding="utf-8")
+            outside = cf.AsciiDocModel(path).words_outside_tables
+        self.assertIn("item", outside)
+        self.assertNotIn("ruled", outside)
+
+    def test_a_banner_row_found_nowhere_is_a_loss(self) -> None:
+        import types
+
+        pdf = types.SimpleNamespace(tagged=True, tables=[{"rows": [["Name", "Value"], ["Fungi", ""], ["Candida", "1"]], "page": 1}])
+        adoc = types.SimpleNamespace(tables=[{"rows": [["Name", "Value"], ["Candida", "1"]], "spans": 0}], words=["name", "value", "candida", "1"])
+        self.assertEqual(cf.check_tables(pdf, adoc)["banners"]["missing"], ["#01 'Fungi'"])
+        adoc.tables[0]["rows"].insert(1, ["Fungi"])
+        self.assertEqual(cf.check_tables(pdf, adoc)["banners"]["missing"], [])
+
+
 
 if __name__ == "__main__":
     unittest.main()

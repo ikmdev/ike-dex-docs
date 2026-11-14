@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import collections
 import difflib
+import html.parser
 import statistics
 import json
 import re
@@ -133,10 +134,20 @@ class AsciiDocModel:
         elif title.get("t") == "MetaString":
             self._emit(title["c"])
         self._blocks(ast["blocks"])
+        # a table written with no frame or grid is a list set in aligned columns, not a ruled table of the PDF:
+        # its words are text in the PDF's reading order
+        flags, inside, previous = [], False, ""
+        for line in text.split("\n"):
+            if line == "|===":
+                if not inside:
+                    flags.append("frame=none" in previous and "grid=none" in previous)
+                inside = not inside
+            previous = line
+        self.unruled = {i for i, flag in enumerate(flags) if flag} if len(flags) == len(self.tables) else set()
 
     @property
     def words_outside_tables(self) -> list[str]:
-        inside = {i for a, b in self.table_ranges for i in range(a, b)}
+        inside = {i for n, (a, b) in enumerate(self.table_ranges) if n not in self.unruled for i in range(a, b)}
         return [w for i, w in enumerate(self.words) if i not in inside]
 
     # -- inlines -----------------------------------------------------------
@@ -982,7 +993,25 @@ def check_tables(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
                 "first_cell": ref["rows"][0][0][:30] if ref["rows"] and ref["rows"][0] else "",
             }
         )
-    return {"tables": rows, "orphan_adoc_tables": orphans, "adoc_tables": len(converted)}
+    # A banner row (a row of one filled cell: "Fungi" over the rows that follow) adds a few letters, too few to
+    # move a table's cell recall, so each is looked for by itself: as a cell of the table it was read in, or
+    # anywhere in the AsciiDoc text. A banner found nowhere is a loss.
+    text_keys = "".join(cell_key(w) for w in adoc.words)
+    banners = {"total": 0, "elsewhere": [], "missing": []}
+    for m, ref in enumerate(tagged):
+        mine_keys = {k for n in assigned.get(m, []) for k in converted[n]["keys"]}
+        for row in ref["rows"]:
+            filled_cells = [c for c in row if cell_key(c)]
+            if len(filled_cells) != 1 or len(row) < 2:
+                continue
+            key, text = cell_key(filled_cells[0]), " ".join(filled_cells[0].split())
+            if len(key) < 3:
+                continue
+            banners["total"] += 1
+            if key in mine_keys:
+                continue
+            banners["elsewhere" if key in text_keys else "missing"].append(f"#{m + 1:02d} '{text[:40]}'")
+    return {"tables": rows, "orphan_adoc_tables": orphans, "adoc_tables": len(converted), "banners": banners}
 
 
 _LABELS = {"note", "notes", "notice", "tip", "hint", "important", "attention", "warning", "danger", "caution"}
@@ -1089,6 +1118,72 @@ def _blank_image(path: Path) -> bool:
         return all(lo == hi for lo, hi in extrema)
     except Exception:
         return False
+
+
+class _HtmlWords(html.parser.HTMLParser):
+    """The text of an Asciidoctor page, a word apart wherever a block, a cell or a raised mark begins or ends."""
+
+    _APART = {"p", "div", "td", "th", "tr", "li", "br", "sup", "sub", "h1", "h2", "h3", "h4", "h5", "h6",
+              "caption", "dt", "dd", "table", "ul", "ol", "pre", "blockquote", "figcaption"}
+    _SKIP = {"style", "script", "head", "title"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._skip = 0
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag in self._SKIP:
+            self._skip += 1
+        if tag in self._APART:
+            self.parts.append(" ")
+        if tag == "img":  # Pandoc reads a picture's alternative text as words, so the page's is its alt too
+            self.parts.append(" " + str(dict(attrs).get("alt") or "") + " ")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP:
+            self._skip = max(self._skip - 1, 0)
+        if tag in self._APART:
+            self.parts.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self.parts.append(data)
+
+
+def check_rendering(adoc_path: Path, adoc: AsciiDocModel) -> dict[str, Any]:
+    """A second reader of the AsciiDoc. Pandoc reads a line Asciidoctor throws away (a paragraph that opens with
+    ``[`` and ends with ``]`` is a block attribute list to Asciidoctor, which prints nothing of it), so the text
+    check can pass on words no rendered page has. The AsciiDoc is rendered with Asciidoctor and each word Pandoc
+    read is looked for in its page; a run of three or more missing in a row is a paragraph that did not render."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("asciidoctor"):
+        return {"skipped": "asciidoctor is not installed"}
+    done = subprocess.run(["asciidoctor", "-q", "-o", "-", str(adoc_path)], capture_output=True, text=True)
+    if done.returncode != 0:
+        return {"skipped": "asciidoctor failed: " + (done.stderr.strip().splitlines() or ["?"])[-1]}
+    reader = _HtmlWords()
+    reader.feed(done.stdout)
+    available = collections.Counter(tokens("".join(reader.parts)))
+    missing: list[str] = []
+    runs: list[list[str]] = []
+    run: list[str] = []
+    for word in adoc.words:
+        if available[word] > 0:
+            available[word] -= 1
+            if run:
+                runs.append(run)
+                run = []
+        else:
+            missing.append(word)
+            run.append(word)
+    if run:
+        runs.append(run)
+    # symbols alone ('+' where Pandoc reads a passthrough as characters and Asciidoctor prints the one inside) are not text
+    lost = [r for r in runs if sum(1 for w in r if w[:1].isalnum()) >= 3]
+    return {"words": len(adoc.words), "missing": len(missing), "lost_runs": [" ".join(r[:12]) for r in lost]}
 
 
 def check_structure(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
@@ -1219,6 +1314,16 @@ def report(results: dict[str, Any], args: argparse.Namespace) -> bool:
                 f"row shape {t['shape_match']:.0%}, {t['adoc_tables']} AsciiDoc table(s), {t['spans']} spans"
             )
 
+        banners = tables.get("banners")
+        if banners and banners["total"]:
+            lost = banners["missing"]
+            gate = not lost
+            ok &= gate
+            print(f"[{_status(gate) if not banners['elsewhere'] or not gate else 'WARN'}] Banner rows: {banners['total']} rows of one "
+                  f"cell in the PDF tables, {len(lost)} lost, {len(banners['elsewhere'])} found outside their table")
+            for entry in (lost + banners["elsewhere"])[:6]:
+                print(f"       {entry}")
+
     s = results["structure"]
     warn = []
     if s["headings_flat"]:
@@ -1260,6 +1365,17 @@ def report(results: dict[str, Any], args: argparse.Namespace) -> bool:
     print(f"[{'WARN' if e['callouts_adoc'] < e['callouts_pdf'] else 'PASS'}] Callouts: {e['callouts_pdf']} bold Note/Important labels "
           f"in the PDF, {e['callouts_adoc']} admonitions in the AsciiDoc")
 
+    r = results.get("rendering", {})
+    if "skipped" in r:
+        print(f"[SKIP] Rendering: {r['skipped']}")
+    elif r:
+        gate = not r["lost_runs"]
+        ok &= gate
+        print(f"[{_status(gate)}] Rendering: {r['words']} words Pandoc reads, {r['missing']} not on the Asciidoctor page, "
+              f"{len(r['lost_runs'])} runs of three or more")
+        for run in r["lost_runs"][:5]:
+            print(f"       not rendered: {run}")
+
     if "appearance" in results:
         a = results["appearance"]
         gate = a["mean_score"] >= args.min_appearance and a["source_pages"] == a["rendered_pages"]
@@ -1298,6 +1414,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "tables": check_tables(pdf, adoc),
             "structure": check_structure(pdf, adoc),
             "extras": check_extras(args.pdf, args.adoc, adoc),
+            "rendering": check_rendering(args.adoc, adoc),
         }
         if args.rendered:
             results["appearance"] = check_appearance(args.pdf, args.rendered, args.diff_dir)

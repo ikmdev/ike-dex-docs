@@ -67,6 +67,27 @@ repeats that header on every page again. A header with a cell spanning down (a t
 the AsciiDoc header row, so its cells become row headers (`h`). Where the tags state spans (a Chrome
 export does) they are used when the page borders do not explain the cells.
 
+**A cell a page break cuts** goes on over the break: the first row of the next page has nothing of its own in the
+cell's columns (no box, or an empty box at the top of the page under a cell that ended at the foot of the one
+before), so the cell above spans that row too and the empty cells are dropped (`.3+|Human Cells`, not a row that
+opens with blank cells). A word of a repeated header that the tags filed with a cell of the page before ("Res" in
+a data cell, "ult" in the header) goes back to the header, so the repeat matches and is written once.
+
+**A table of two sections** under one caption (a 2021-2022 section, then a 2016-2017 section, each with its own
+header band) stays one table and is written with no header group (`options=noheader`, the header rows kept as
+bold row headers): a header group can only be the first rows, and a PDF would repeat it over the other section's
+rows on a page break. A banner row of one cell ("Fungi", "Gender") is not a header band.
+
+**Lists set in aligned columns** (an item and its quantity in "Materials Provided", with nothing drawn between the
+columns, on a layout-engine page) become a borderless table (`frame=none,grid=none`): the right-hand text starts
+at one x on three or more lines and is short, the left lines below the last quantity stay in the list, and a
+wrapped line stays with its item.
+
+**Footnotes and marks**: a character raised against the one before it by a third of the type size is a
+superscript even where the line's median baseline sits between the two (a cell holding only "2d"), and a line
+that opens with a raised mark starts the next footnote. A paragraph that opens with `[` and ends with `]` is
+guarded with `{empty}`: Asciidoctor reads it as a block attribute list and prints nothing of it.
+
 **Tables the tags get wrong** (tagged engine): each marked-content id's page is read from the structure tree
 (`structure_pages.py`), not guessed from where the ids restart. A row repeated at the top of the next page is the
 header whatever its style. Text the tags leave out of a table (a page of it tagged as one run, or all of it in one
@@ -184,8 +205,12 @@ Always review output against the source (`check_fidelity.py`, then the page imag
 - **Side-by-side columns** split at gaps over three ems; a tagged PDF reads them in tag order, an
   untagged one in visual row order.
 - **Contents**: the entries and the title over them are dropped (`:toc:` is added).
-- **Borderless tables** are found from their text only beside a picture; elsewhere the layout engine needs
-  ruling lines.
+- **Borderless tables** are found from their text only beside a picture, or as a list of two aligned
+  columns (item and quantity); any other table the layout engine needs ruling lines for.
+- **A numbered list with nested bullets** converts correctly from a clean PDF (tested), but the Rev. C insert
+  (17.1) lost its numbers: that PDF is needed to find why.
+- **A page break inside a table** repeats only the header the AsciiDoc has, so the header of a two-section table is
+  not repeated at all; a header orphaned at the foot of a page (K231481 Table 6) is a rendering matter for the theme.
 - **Pictures of charts and diagrams** stay pictures with the text on them in the description.
 - **Layout guesses** fail on tables without ruling lines, unlabelled lists and headings in body type.
 - **Unsupported**: cell shading, borders and fonts; a block that follows a nested list attaches to its
@@ -218,6 +243,13 @@ Always review output against the source (`check_fidelity.py`, then the page imag
   The report names how many words were judged this way.
 - **Table cells** the tags split in two that the page draws as one (a label spanning two columns) count as one when
   the two read together exactly as one AsciiDoc cell and neither part is a cell of the AsciiDoc itself.
+- **Rendering**: the AsciiDoc is also rendered by Asciidoctor, and each word Pandoc read is looked for in the page. A run
+  of three or more words (with letters in them) that Pandoc reads and the page lacks is a paragraph that did not render
+  (a line Asciidoctor takes for a block attribute list); this fails. Skipped when `asciidoctor` is not installed.
+- **Banner rows**: a table row of one filled cell ("Fungi" over the rows below) adds too few letters to move a table's
+  cell recall, so each is looked for by itself, as a cell of its table or anywhere in the text; one found nowhere fails.
+- **Unruled tables**: a table written with `frame=none,grid=none` is a list the PDF sets in columns, not a ruled table,
+  so its words are judged in the text order.
 - **Links, pictures, captions, callouts**: each is counted in the PDF with code of the checker's own, not the
   converter's, so a shared mistake cannot hide. Link annotations to web or mail addresses against the
   AsciiDoc's links (distinct targets; a missing one fails); pictures and curve drawings against image

@@ -32,7 +32,7 @@ import dataclasses
 import re
 import statistics
 from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence, Union
+from typing import Any, Callable, Iterable, Optional, Sequence, Union
 
 from structure_pages import paged_structure_tree
 
@@ -352,6 +352,12 @@ def line_units(line: Line) -> list[Unit]:
                     script = "sup"
                 elif ch.bottom > line.baseline + 0.3 * line.size:
                     script = "sub"
+                # In a line of a few characters the median baseline sits between a mark and the value it
+                # follows (a "2" and its "d"), so neither is far enough from it: the mark is raised
+                # against the character just before it.
+                if (script is None and previous is not None and previous.text.strip() and previous.size >= 0.8 * line.size
+                        and previous.bottom - ch.bottom > 0.3 * line.size):
+                    script = "sup"
             units.append((ch.text, (ch.bold, ch.italic, script, ch.link, ch.underline, ch.link_title)))
         previous = ch
     return units
@@ -423,8 +429,12 @@ _LINE_START_RE = re.compile(r"^(?:\.\S|(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION):|[
 
 def guard_line_start(text: str) -> str:
     """A paragraph that begins like a block title (``.5 mg``), an admonition (``NOTE:``), a list item
-    (``- ``) or a comment would be read as that block; ``{empty}`` in front makes it text."""
-    return "{empty}" + text if _LINE_START_RE.match(text) else text
+    (``- ``) or a comment would be read as that block; ``{empty}`` in front makes it text. A line that opens
+    with ``[`` and closes with ``]`` is a block attribute list to Asciidoctor, which prints nothing of it: a
+    labelled line ending in a link (``[.underline]##Labeler##: 9567 link:https://...[Terms of Use]``) is one."""
+    if _LINE_START_RE.match(text) or (text.startswith("[") and text.rstrip().endswith("]")):
+        return "{empty}" + text
+    return text
 
 
 def render_units(units: Sequence[Unit], *, bold: bool = True) -> str:
@@ -583,6 +593,9 @@ def _layout_break(previous: Line, line: Line, first: Line, right_edge: float, pi
         return True
     if line.x0 < first.x0 - 2 * line.size:
         return True
+    marks = [u for u in line_units(line) if u[0].strip()]
+    if marks and marks[0][1] is not None and marks[0][1][2] == "sup" and line.x0 <= previous.x0 + 2:
+        return True  # a raised mark opens the line: the next footnote ("^b^ Discrepant ...")
     ended = _line_text(previous).endswith((".", ":", ";", "!", "?"))
     return bool(right_edge) and ended and previous.x1 < right_edge - 4 * previous.size
 
@@ -878,6 +891,79 @@ class Table:
     top: float = 0.0
     emitted: bool = False
     legend: bool = False  # found beside a picture from its text alone, no ruling lines
+    borderless: bool = False  # a list set in aligned columns with nothing drawn between them
+
+
+def aligned_columns(lines: list[Line], page: int, page_width: float) -> tuple[list[Line], list[Table]]:
+    """A list set in two columns with nothing drawn between them (an item and its quantity: "Lysis Reagent
+    1.0 mL per cartridge") is a table. The right-hand text starts at one x on three or more lines, each on
+    the row of a left-hand line, and is short: running text in two columns has lines a column wide. The left
+    lines below the last quantity (the contents of its item) belong to the list too, while they keep the
+    line pitch and the left edge. A left line that has no quantity is the wrapped rest of the item above when
+    it is not a bullet and sits one line below it, otherwise a row of its own with an empty right cell.
+    Returns the lines that are left and the table (borderless), or the lines and no table."""
+    body = [ln for ln in lines if not ln.blank]
+    pairs: list[tuple[Line, Line]] = []
+    for right in body:
+        if right.x0 < 0.4 * page_width or right.x1 - right.x0 > 0.3 * page_width:
+            continue
+        left = [ln for ln in body if ln is not right and abs(ln.top - right.top) <= 0.5 * ln.size
+                and ln.x1 < right.x0 - 3 * ln.size]
+        if len(left) == 1:
+            pairs.append((left[0], right))
+    if len(pairs) < 3:
+        return lines, []
+    anchor = collections.Counter(round(r.x0 / 3) for _, r in pairs).most_common(1)[0][0]
+    pairs = sorted(((a, b) for a, b in pairs if round(b.x0 / 3) == anchor), key=lambda pr: pr[0].top)
+    if len(pairs) < 3:
+        return lines, []
+    right_of = {id(a): b for a, b in pairs}
+    right_ids = {id(b) for _, b in pairs}
+    left_x = statistics.median(a.x0 for a, _ in pairs)
+    size = statistics.median(a.size for a, _ in pairs)
+    first_top, last_top = pairs[0][0].top, pairs[-1][0].top
+    column = sorted((ln for ln in body if id(ln) not in right_ids and ln.top >= first_top - 1
+                     and left_x - 4 <= ln.x0 <= left_x + 2 * size), key=lambda ln: ln.top)
+    # nothing but the list's own lines may sit between its first and last rows
+    inside = [ln for ln in body if first_top - 1 <= ln.top <= last_top + 1 and id(ln) not in right_ids]
+    if any(ln not in column for ln in inside):
+        return lines, []
+    steps = [b.top - a.top for a, b in zip(column, column[1:]) if column.index(b) <= column.index(pairs[-1][0])]
+    pitch = statistics.median(steps) if steps else 2 * size
+    block: list[Line] = []
+    for ln in column:
+        if block and ln.top > last_top + 1 and (ln.top - block[-1].top > 1.4 * pitch or abs(ln.size - size) > 0.5):
+            break  # the contents under the last item end where the lines change size or stop keeping the pitch
+        block.append(ln)
+    if not block or block[0] is not pairs[0][0]:
+        return lines, []
+    groups: list[list[Line]] = []
+    for ln in block:
+        previous = groups[-1][-1] if groups else None
+        wrapped = (previous is not None and id(ln) not in right_of and parse_label(_line_text(ln)) is None
+                   and ln.top - previous.top <= 1.45 * ln.size
+                   and (abs(ln.x0 - previous.x0) <= 2 if parse_label(_line_text(previous)) is None
+                        else previous.x0 < ln.x0 <= previous.x0 + 3 * size))  # the text of a bullet is set in from it
+        if wrapped:
+            groups[-1].append(ln)
+        else:
+            groups.append([ln])
+    left_edge = min(ln.x0 for ln in block) - 3
+    right_edge = max(b.x1 for _, b in pairs) + 6
+    gutter = min(b.x0 for _, b in pairs) - 3  # text sits 3 pt in from its cell's edge, so reads as left-aligned
+    rows: list[list[Cell]] = []
+    for r, group in enumerate(groups):
+        top = group[0].top - 1
+        bottom = groups[r + 1][0].top - 1 if r + 1 < len(groups) else group[-1].bottom + 1
+        quantity = [right_of[id(ln)] for ln in group if id(ln) in right_of]
+        rows.append([
+            Cell(header=False, chars=[c for ln in group for c in ln.chars], rect=(left_edge, top, gutter, bottom), col=0, page=page),
+            Cell(header=False, chars=[c for ln in quantity for c in ln.chars], rect=(gutter, top, right_edge, bottom), col=1, page=page),
+        ])
+    table = Table(rows=rows, pages={page}, first_page=page, borderless=True)
+    table.top = groups[0][0].top - 1
+    used = {id(ln) for ln in block} | right_ids
+    return [ln for ln in lines if id(ln) not in used], [table]
 
 
 def text_grid(chars: list[Ch], page: int) -> Optional[Table]:
@@ -1168,6 +1254,57 @@ def _assign_grid(table: Table) -> bool:
     return True
 
 
+def _span_over_page_breaks(table: Table, page_height: Callable[[int], float]) -> int:
+    """A cell a page break cuts in two goes on over the break, so the first row of the next page has nothing of
+    its own in the cell's columns: no box at all, or an empty box at the top of the page under a cell that ends
+    at the foot of the page before. The cell does not end at the break: it spans that row too, as it does the
+    rows above, and the row's empty leading cells are dropped. A row below the first on that page that has
+    no box in the same columns belongs to the same cell. The empty cells must span the very columns of the
+    cell above. Returns the rows joined to a cell above."""
+    owner: dict[tuple[int, int], tuple[Cell, int]] = {}
+    for r, row in enumerate(table.rows):
+        for cell in row:
+            for dr in range(cell.rowspan):
+                for dc in range(cell.colspan):
+                    owner[(r + dr, cell.col + dc)] = (cell, r)
+
+    def cut(above: Optional[tuple[Cell, int]], cell: Cell) -> bool:
+        """Is this empty box the top of the page, under a cell that ran to the foot of the page before?"""
+        if above is None or above[0].rect is None or cell.rect is None:
+            return False
+        return (above[0].rect[3] > 0.75 * page_height(above[0].page)
+                and cell.rect[1] < 0.25 * page_height(cell.page))
+
+    carried: set[int] = set()
+    joined = 0
+    for r in range(1, len(table.rows)):
+        row, above = table.rows[r], table.rows[r - 1]
+        if not row or not above:
+            continue
+        page_top = row[0].page != above[0].page
+        lead = 0
+        while lead < len(row) and not row[lead].chars and not row[lead].pictures and (
+                row[lead].rect is None or (page_top and cut(owner.get((r - 1, row[lead].col)), row[lead]))):
+            lead += 1
+        if not lead or lead == len(row):
+            continue
+        if not (page_top or (r - 1) in carried):
+            continue
+        origins = [owner.get((r - 1, cell.col)) for cell in row[:lead]]
+        if any(o is None or o[0].col != cell.col or o[0].colspan != cell.colspan
+               or not (o[0].chars or o[0].pictures) for o, cell in zip(origins, row[:lead])):
+            continue
+        for (origin, start), cell in zip(origins, row[:lead]):
+            origin.rowspan = r - start + cell.rowspan  # the empty box may itself span several rows
+            for dr in range(cell.rowspan):
+                for dc in range(cell.colspan):
+                    owner[(r + dr, cell.col + dc)] = (origin, start)
+        del row[:lead]
+        carried.add(r)
+        joined += 1
+    return joined
+
+
 def _columns_by_position(table: Table) -> bool:
     """Fallback when the borders do not explain the spans: each cell goes in the column it starts in, found from
     where cells (their boxes, or their text) start across the table. A row without a first cell (a cell above
@@ -1264,6 +1401,30 @@ def _header_row_count(table: Table) -> int:
     return count
 
 
+def _restore_split_header(block: list[list[Cell]], key: list[list[Cell]], before: list[list[Cell]]) -> bool:
+    """A header repeated on the next page can lose the start of a word to a cell above it: the tags file "Res"
+    with a cell of the page before and leave "ult" in the header. Where a cell of the repeat is the end of the
+    word the first header has, and a cell above holds characters from the repeat's own page that make up the
+    missing start, those characters move back to the header. True when something moved."""
+    moved = False
+    for row, model in zip(block, key):
+        if len(row) != len(model):
+            continue
+        for cell, original in zip(row, model):
+            have, want = _cell_text(cell), _cell_text(original)
+            if not have or have == want or not want.endswith(have):
+                continue
+            start = want[:len(want) - len(have)]
+            for donor in (c for rows in reversed(before) for c in rows):
+                foreign = [ch for ch in donor.chars if ch.page == cell.page and donor.page < cell.page]
+                if foreign and re.sub(r"\s+", "", "".join(ch.text for ch in foreign)) == start:
+                    donor.chars = [ch for ch in donor.chars if ch not in foreign]
+                    cell.chars = foreign + cell.chars
+                    moved = True
+                    break
+    return moved
+
+
 def _drop_repeated_headers(table: Table) -> int:
     """Remove header rows that repeat the table's own header further down: a PDF repeats it at the top of
     every page, and the rendered AsciiDoc does the same, so it is written once. Returns rows dropped."""
@@ -1274,6 +1435,8 @@ def _drop_repeated_headers(table: Table) -> int:
     dropped, i = 0, count
     while i + count <= len(table.rows):
         block = table.rows[i:i + count]
+        if all(row and all(c.header for c in row) for row in block):
+            _restore_split_header(block, table.rows[:count], table.rows[:i])
         if all(row and all(c.header for c in row) for row in block) and [[_cell_text(c) for c in r] for r in block] == key:
             del table.rows[i:i + count]
             dropped += count
@@ -1309,6 +1472,35 @@ def _infer_header(table: Table) -> int:
         for cell in row:
             cell.header = True
     return count
+
+
+def _header_band_again(table: Table) -> bool:
+    """Does the table set a second header band after rows of data? A table of two sections (2021-2022, then
+    2016-2017) under one caption has the first section's header at the top and the second's after its rows.
+    A header group can only be the first rows, and the PDF repeats it over a page's rows whichever section they
+    belong to; so such a table is written with no header group, its header rows kept as bold row headers and
+    one caption over the whole. The second band is a row of header or bold cells, after data rows, that begins
+    like the first (its first cell's letters match) or has as many cells as the first header row."""
+    count = _header_row_count(table)
+    if not count or len(table.rows) <= count + 1:
+        return False
+    first = [_cell_text(c) for c in table.rows[0] if _cell_text(c)]
+    if len(first) < 2:
+        return False
+
+    def letters(text: str) -> str:
+        return re.sub(r"[\W\d_]+", "", text).lower()
+
+    seen_data = False
+    for row in table.rows[count:]:
+        cells = [c for c in row if _cell_text(c)]
+        styled = bool(cells) and all(c.header or all(ch.bold for ch in c.chars if ch.text.strip()) for c in cells)
+        if not styled:
+            seen_data = True
+        elif seen_data and len(cells) >= 2 and (letters(_cell_text(cells[0])) == letters(first[0]) or
+                                                 (len(cells) == len(first) and len(first) >= 3)):
+            return True
+    return False
 
 
 def _repeats_first_row(first: Table, second: Table) -> bool:
@@ -2009,6 +2201,8 @@ class TaggedPdfConverter:
             tables += legends
             flow, labels = take_margin_labels(flow)
             lines = [ln for ln in group_lines(flow) if not self._skip(plain(line_units(ln)))]
+            lines, listed = aligned_columns(lines, number, page.width)
+            tables += listed
             wide = [ln.x1 for ln in lines if len(_line_text(ln)) >= 50]
             blocks = flow_blocks(lines, layout=True, right_edge=max(wide, default=0.0), pitch=_line_pitch(lines))
             blocks += assign_callouts(blocks, labels, PageBorders(page).horizontal, self._callouts)
@@ -2330,6 +2524,8 @@ class TaggedPdfConverter:
         for i, (piece, is_bullet) in enumerate(parts):
             if i:  # bullets follow each other directly; anything else needs a blank line
                 text += "\n" if is_bullet and parts[i - 1][1] else "\n\n"
+            if rich and not is_bullet and piece.startswith("[") and piece.endswith("]"):
+                piece = "{empty}" + piece  # an AsciiDoc cell reads such a line as an attribute list and drops it
             text += piece
         return text.replace("|", "\\|"), rich
 
@@ -2359,12 +2555,16 @@ class TaggedPdfConverter:
         joined, i = 0, 1
         while i < len(table.rows):
             above, below = table.rows[i - 1], table.rows[i]
-            if not (above and below and all(c.rect for c in above + below) and below[0].page == above[0].page + 1
-                    and len(below) < len(above)):
+            # the cells the next page leaves empty (a cell above spans on) have no text to carry over
+            real = [c for c in below if c.rect or c.chars]
+            # the row above may itself have run over a page already: it ends on its text's last page
+            last = max((ch.page for c in above for ch in c.chars), default=0) if above else 0
+            if not (above and real and all(c.rect for c in above + real)
+                    and below[0].page in (above[0].page + 1, last + 1) and len(real) < len(above)):
                 i += 1
                 continue
             pairs = []
-            for cell in below:
+            for cell in real:
                 mid = (cell.rect[0] + cell.rect[2]) / 2
                 twin = next((a for a in above if a.rect[0] - 2 <= mid <= a.rect[2] + 2), None)
                 pairs.append((twin, cell))
@@ -2391,7 +2591,9 @@ class TaggedPdfConverter:
         else:
             if stated:
                 table.rows[:] = [[dataclasses.replace(c, chars=list(c.chars)) for c in row] for row in saved]
-            if not _assign_grid(table):
+            if _assign_grid(table):
+                _span_over_page_breaks(table, lambda n: self.pdf.pages[n - 1].height)
+            else:
                 table.rows[:] = saved
                 if not _grid_from_tags(table):
                     if _columns_by_position(table):
@@ -2428,11 +2630,13 @@ class TaggedPdfConverter:
         first = table.rows[0]
         # Only the first row can be the AsciiDoc header, and a span cannot cross out of it: a header with a
         # cell spanning down (a two-row header) keeps its header cells as row headers instead.
-        if first and all(c.header for c in first) and all(c.rowspan == 1 for c in first):
+        if first and all(c.header for c in first) and all(c.rowspan == 1 for c in first) and not _header_band_again(table):
             attrs.append("options=header")
         else:
             # Without this Asciidoctor takes the first row, which our blank lines set apart, as a header row
             attrs.append("options=noheader")
+        if table.borderless:
+            attrs += ["frame=none", "grid=none"]
         lines = [f"[{','.join(attrs)}]", "|==="]
         for r, cells in enumerate(rendered):
             header_row = r == 0 and "options=header" in attrs
