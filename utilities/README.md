@@ -78,6 +78,14 @@ header band) stays one table and is written with no header group (`options=nohea
 bold row headers): a header group can only be the first rows, and a PDF would repeat it over the other section's
 rows on a page break. A banner row of one cell ("Fungi", "Gender") is not a header band.
 
+**Cell alignment** is measured per cell from the text against its drawn box (left, centred, right; text that fills
+the box says nothing). Each column takes the alignment most of its cells have, and a cell is marked only where it
+differs. Two points keep this right across page breaks: a cell on a continuation page is judged against the box
+as drawn on its own page (the table is drawn at a different x on each page, and the boxes are moved to line the
+columns up, not the characters), and the mark is written against the column Asciidoctor will apply, which is the
+cell's place among the cells written in its row, so a cell after one that spans down gets its own mark. A left
+cell in a centred column is written `<`, not left blank.
+
 **Lists set in aligned columns** (an item and its quantity in "Materials Provided", with nothing drawn between the
 columns, on a layout-engine page) become a borderless table (`frame=none,grid=none`): the right-hand text starts
 at one x on three or more lines and is short, the left lines below the last quantity stay in the list, and a
@@ -94,6 +102,9 @@ header whatever its style. Text the tags leave out of a table (a page of it tagg
 "cell") is filed by the page's borders; a ruled grid left in the text is a table. A row tagged apart whose box is a
 cell's box joins that cell, and the rest of a row a page break cut joins the cell it continues. Text on its side
 is read along its own direction. When borders cannot explain the spans, cells go in the column they start in.
+A producer can also tag one drawn cell as two (a range "0.47 – 35.7" as two cells under a header spanning both); when
+the columns the tags state differ from the columns the page draws, the tags' grid is dropped and the drawn borders
+decide the spans. The `cols` of a table with no known widths carries the measured alignment of each column.
 Text tagged into a cell above, on a later page and outside that cell's column (a header cell the producer tags
 as part of the previous row), is released and filed by the borders into the row it sits in. A table of figures
 whose top rows have none (and no tag or bold marks them) gets those rows as its header; a table of names and
@@ -232,6 +243,11 @@ Always review output against the source (`check_fidelity.py`, then the page imag
   ruling lines (the same kind of guess the layout engine makes, so look at the page too). Each table must be matched by AsciiDoc table(s) with
   its text and every row of two or more filled cells in order. Extra rows are reported, not failed.
   Spans are checked only through cells per row.
+- **Columns**: independent of the tags, the columns the page draws (ruling-line edges within 7 pt count as one,
+  an edge must run along at least half the table's height, a strip with no text is not a column) must equal the
+  AsciiDoc table's column count, either as drawn or counting only strips with text. A table whose tags split its cells
+  is then exempt from the Tables check, which trusts those tags. Ruled tables the text does not match are counted,
+  not failed; borderless tables are not covered.
 - **Pictures**: pages with a picture are flagged; its text is not in the text layer. OCR tables show
   as AsciiDoc tables with no tagged match.
 - **Reading order of a tagged PDF** is judged on the tag order, with a run that holds several columns put column by

@@ -272,7 +272,7 @@ class AsciiDocModel:
                 widths.pop()
             rows.append(cells)
         self.table_ranges.append((table_start, len(self.words)))
-        self.tables.append({"rows": rows, "spans": spans})
+        self.tables.append({"rows": rows, "spans": spans, "columns": len(colspecs)})
 
 
 # --------------------------------------------------------------------------
@@ -966,6 +966,16 @@ def check_tables(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
         else:
             orphans.append(n)
 
+    # The tags can split one drawn cell in two (a table the producer tagged with more columns than the page draws).
+    # Such a table cannot be judged against its tags, so it is left to the Columns check.
+    grids = _ruled_grids(pdf)
+    grid_keys = [g["keys"] for g in grids]
+    split_tags = set()
+    for m, ref in enumerate(tagged):
+        best, score = _best_match(ref["keys"], grid_keys)
+        tag_columns = max((len(r) for r in ref["rows"]), default=0)
+        if best is not None and score >= 0.6 and tag_columns > max(grids[best]["columns"], grids[best]["with_text"]):
+            split_tags.add(m)
     rows = []
     for m, ref in enumerate(tagged):
         mine = [converted[n] for n in assigned.get(m, [])]
@@ -991,6 +1001,7 @@ def check_tables(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
                 "shape_match": shape_ratio if mine else 0.0,
                 "spans": sum(t["spans"] for t in mine),
                 "first_cell": ref["rows"][0][0][:30] if ref["rows"] and ref["rows"][0] else "",
+                "tags_split": m in split_tags,
             }
         )
     # A banner row (a row of one filled cell: "Fungi" over the rows that follow) adds a few letters, too few to
@@ -1017,6 +1028,89 @@ def check_tables(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
 _LABELS = {"note", "notes", "notice", "tip", "hint", "important", "attention", "warning", "danger", "caution"}
 _CAPTION_LINE_RE = re.compile(r"^(Table|Figure|Fig\.|Chart|Exhibit|Diagram)\s+([A-Z]?\d+(?:[.-]\d+)*[A-Za-z]?)\s*[.:\u2013\u2014-]\s*\S")
 _WEB = ("http://", "https://", "mailto:", "ftp://")
+
+
+def _drawn_edges(cells: list[tuple[float, float, float, float]], tolerance: float = 7.0, support: float = 0.5) -> list[float]:
+    """Columns a ruled table draws: the vertical edges its cells share, less one. An edge counts when cell sides
+    along it cover at least half the table's height, so a stray stroke or the jitter of borders drawn row by row
+    adds no column; two strokes a few points apart (a thick or double rule) are one edge."""
+    sides = sorted([(c[0], c[1], c[3]) for c in cells] + [(c[2], c[1], c[3]) for c in cells])
+    groups: list[list[tuple[float, float, float]]] = []
+    for side in sides:
+        if groups and side[0] - groups[-1][-1][0] <= tolerance:
+            groups[-1].append(side)
+        else:
+            groups.append([side])
+    height = (max(c[3] for c in cells) - min(c[1] for c in cells)) or 1.0
+    kept: list[float] = []
+    for group in groups:
+        covered, end = 0.0, float("-inf")
+        for top, bottom in sorted((a, b) for _, a, b in group):
+            top = max(top, end)
+            if bottom > top:
+                covered += bottom - top
+                end = bottom
+        if covered / height >= support:
+            kept.append(sum(x for x, _, _ in group) / len(group))
+    return kept
+
+
+def _drawn_columns(edges: list[float], words: list[dict[str, Any]]) -> tuple[int, int]:
+    """(columns between the drawn edges, those of them with text in): a strip with no text (a gutter beside a
+    rotated label, a margin of a boxed table) is drawn but is not a column of the table's content."""
+    middles = [(w["x0"] + w["x1"]) / 2 for w in words]
+    return len(edges) - 1, sum(1 for a, b in zip(edges, edges[1:]) if any(a <= m <= b for m in middles))
+
+
+def _ruled_grids(pdf: PdfModel) -> list[dict[str, Any]]:
+    """Every ruled table of the PDF with the columns its borders draw (read once)."""
+    if getattr(pdf, "_grids", None) is None:
+        grids = []
+        for number, page in enumerate(getattr(getattr(pdf, "plumber", None), "pages", []), 1):
+            page_words = page.extract_words()
+            for found in page.find_tables():
+                if len(found.cells) < 2:
+                    continue
+                edges = _drawn_edges([tuple(c) for c in found.cells])
+                inside = [w for w in page_words if found.bbox[0] <= w["x0"] and w["x1"] <= found.bbox[2]
+                          and found.bbox[1] <= w["top"] and w["bottom"] <= found.bbox[3]]
+                columns, with_text = _drawn_columns(edges, inside)
+                rows = found.extract()
+                keys = [k for row in rows for c in row if (k := cell_key(c or ""))]
+                if columns >= 2 and len(keys) >= 2:
+                    first = next((c for row in rows for c in row if c and c.strip()), "")
+                    grids.append({"page": number, "columns": columns, "with_text": with_text, "keys": keys,
+                                  "first_cell": " ".join(first.split())[:30]})
+        pdf._grids = grids
+    return pdf._grids
+
+
+def _best_match(keys: list[str], candidates: list[list[str]]) -> tuple[Optional[int], float]:
+    best, best_score = None, 0.0
+    for n, other in enumerate(candidates):
+        shared = _overlap(other, keys)
+        score = max(shared / max(len(other), 1), shared / max(len(keys), 1)) if shared >= 2 else 0.0
+        if score > best_score:
+            best, best_score = n, score
+    return best, best_score
+
+
+def check_columns(pdf: PdfModel, adoc: AsciiDocModel) -> dict[str, Any]:
+    """The columns of each table the page draws against the columns of the AsciiDoc table holding its text.
+    The tags cannot be the reference: a producer can tag one drawn cell as two, and then the tags and the AsciiDoc
+    agree with each other and are both wrong. The drawn borders are the page's own account of its columns."""
+    converted = [[k for row in t["rows"] for c in row if (k := cell_key(c))] for t in adoc.tables]
+    checked, unmatched, wrong = 0, 0, []
+    for grid in _ruled_grids(pdf):
+        best, score = _best_match(grid["keys"], converted)
+        if best is None or score < 0.6:
+            unmatched += 1
+            continue
+        checked += 1
+        if adoc.tables[best]["columns"] not in (grid["columns"], grid["with_text"]):
+            wrong.append({"page": grid["page"], "pdf_columns": grid["columns"], "adoc_columns": adoc.tables[best]["columns"],
+                          "first_cell": grid["first_cell"]})
+    return {"checked": checked, "unmatched": unmatched, "wrong": wrong}
 
 
 def _same_link(url: str) -> str:
@@ -1292,7 +1386,7 @@ def report(results: dict[str, Any], args: argparse.Namespace) -> bool:
     else:
         bad = [
             t for t in tables["tables"]
-            if t["cell_recall"] < args.min_cells or t["shape_match"] < args.min_shape
+            if not t.get("tags_split") and (t["cell_recall"] < args.min_cells or t["shape_match"] < args.min_shape)
         ]
         gate = not bad
         ok &= gate
@@ -1303,6 +1397,10 @@ def report(results: dict[str, Any], args: argparse.Namespace) -> bool:
         if tables["orphan_adoc_tables"]:
             numbers = ", ".join(str(n + 1) for n in tables["orphan_adoc_tables"])
             print(f"       AsciiDoc tables with no tagged match (picture tables or untagged): {numbers}")
+        split = [t for t in tables["tables"] if t.get("tags_split")]
+        if split:
+            print("       tagged with more columns than the page draws, judged by the Columns check instead: "
+                  + ", ".join(f"#{t['table']:02d} p{t['page']}" for t in split))
         extra = [t for t in tables["tables"] if t["adoc_rows"] > t["pdf_rows"]]
         if extra:
             print("       rows beyond the tags (header cells the tags leave out): "
@@ -1365,6 +1463,15 @@ def report(results: dict[str, Any], args: argparse.Namespace) -> bool:
     print(f"[{'WARN' if e['callouts_adoc'] < e['callouts_pdf'] else 'PASS'}] Callouts: {e['callouts_pdf']} bold Note/Important labels "
           f"in the PDF, {e['callouts_adoc']} admonitions in the AsciiDoc")
 
+    c = results.get("columns")
+    if c is not None:
+        gate = not c["wrong"]
+        ok &= gate
+        print(f"[{_status(gate)}] Columns: {c['checked']} ruled tables matched to the AsciiDoc, {len(c['wrong'])} with a different number of columns"
+              + (f" ({c['unmatched']} ruled tables not matched)" if c["unmatched"] else ""))
+        for w in c["wrong"][:8]:
+            print(f"       p{w['page']} '{w['first_cell']}': the page draws {w['pdf_columns']} columns, the AsciiDoc has {w['adoc_columns']}")
+
     r = results.get("rendering", {})
     if "skipped" in r:
         print(f"[SKIP] Rendering: {r['skipped']}")
@@ -1415,6 +1522,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "structure": check_structure(pdf, adoc),
             "extras": check_extras(args.pdf, args.adoc, adoc),
             "rendering": check_rendering(args.adoc, adoc),
+            "columns": check_columns(pdf, adoc),
         }
         if args.rendered:
             results["appearance"] = check_appearance(args.pdf, args.rendered, args.diff_dir)

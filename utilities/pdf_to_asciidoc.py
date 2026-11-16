@@ -881,6 +881,7 @@ class Cell:
     tag_colspan: int = 1  # spans stated by the tags (a Chrome export has them; Word and Prince do not)
     tag_rowspan: int = 1
     pictures: list = dataclasses.field(default_factory=list)  # picture blocks drawn inside the cell
+    shift: float = 0.0  # how far _merge_tables moved rect sideways; the characters stay where the page has them
 
 
 @dataclasses.dataclass
@@ -1379,6 +1380,17 @@ def _grid_from_tags(table: Table) -> bool:
     last = len(table.rows)
     return (ncols > 0 and all(w == ncols for w in widths)
             and all(r < last for r, _ in occupied))  # a row span must not run past the last row
+
+
+def _tags_fit_the_page(table: Table) -> bool:
+    """The grid the tags state has as many columns as the page draws. A producer can tag one drawn cell as two
+    (or the other way round); then the tags' spans are wrong, and the drawn borders say how the cells span."""
+    known = [c for row in table.rows for c in row if c.rect]
+    if not known:
+        return True
+    drawn = len(_cluster(x for c in known for x in (c.rect[0], c.rect[2]))) - 1
+    stated = max((c.col + c.colspan for row in table.rows for c in row), default=0)
+    return drawn == stated
 
 
 def _cell_text(cell: Cell) -> str:
@@ -2333,6 +2345,7 @@ class TaggedPdfConverter:
                         for cell in row:
                             if cell.rect:
                                 cell.rect = (cell.rect[0] + shift, cell.rect[1], cell.rect[2] + shift, cell.rect[3])
+                                cell.shift += shift
                     first.rows += second.rows
                     first.pages |= second.pages
                     second.emitted = True
@@ -2586,7 +2599,7 @@ class TaggedPdfConverter:
         note = ""
         stated = any(c.tag_colspan > 1 or c.tag_rowspan > 1 for row in table.rows for c in row)
         saved = [[dataclasses.replace(c, chars=list(c.chars)) for c in row] for row in table.rows]
-        if stated and _grid_from_tags(table):
+        if stated and _grid_from_tags(table) and _tags_fit_the_page(table):
             pass  # the tags say how the cells span
         else:
             if stated:
@@ -2612,7 +2625,9 @@ class TaggedPdfConverter:
             cells = []
             for cell in row:
                 text, rich = self._render_cell(cell)
-                align = self._alignment(cell, cell.rect)
+                # judged against the box as drawn on its own page: the characters were not moved with the rect
+                box = cell.rect and (cell.rect[0] - cell.shift, cell.rect[1], cell.rect[2] - cell.shift, cell.rect[3])
+                align = self._alignment(cell, box)
                 if cell.colspan == 1 and cell.col < ncols and cell.chars and align != "?":
                     aligns[cell.col][align] += 1
                 cells.append((cell, text, rich, align))
@@ -2626,7 +2641,7 @@ class TaggedPdfConverter:
             span = (x_edges[-1] - x_edges[0]) / (page_width - 144)
             attrs = [f'cols="{",".join(cols)}"', f"width={min(round(span * 100), 100)}%"]
         else:
-            attrs = [f'cols="{ncols}*"']
+            attrs = [f'cols="{",".join(a or "<" for a in column_align)}"']  # alignment only: the widths are not known
         first = table.rows[0]
         # Only the first row can be the AsciiDoc header, and a span cannot cross out of it: a header with a
         # cell spanning down (a two-row header) keeps its header cells as row headers instead.
@@ -2641,6 +2656,8 @@ class TaggedPdfConverter:
         for r, cells in enumerate(rendered):
             header_row = r == 0 and "options=header" in attrs
             parts = []
+            pos = 0  # the column Asciidoctor applies to a cell: spans of the cells written before it in this row,
+            #          not counting a cell above that spans down into the row (so a cell after one gets its left neighbour's)
             for cell, text, rich, align in cells:
                 prefix = ""
                 if cell.colspan > 1:
@@ -2649,11 +2666,15 @@ class TaggedPdfConverter:
                     prefix += f".{cell.rowspan}"
                 if prefix:
                     prefix += "+"
-                column = column_align[cell.col] if cell.col < ncols else ""
-                if align == "?":
-                    align = column if cell.colspan == 1 else ""
-                if cell.colspan > 1 or align != column:
-                    prefix += align
+                applied = (column_align[pos] if pos < ncols else "") or "<"
+                column = (column_align[cell.col] if cell.col < ncols else "") or "<"
+                if align == "?":  # the text says nothing: a plain cell follows its own column, a spanning one the column it sits in
+                    wanted = column if cell.colspan == 1 else None
+                else:
+                    wanted = align or "<"
+                if wanted is not None and wanted != applied:
+                    prefix += wanted
+                pos += cell.colspan
                 if rich:
                     prefix += "a"  # a cell takes one style letter, and a list needs the AsciiDoc one
                 elif cell.header and not header_row:

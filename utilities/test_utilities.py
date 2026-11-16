@@ -13,6 +13,7 @@ import dataclasses
 import shutil
 import subprocess
 import sys
+import re
 import unittest
 from pathlib import Path
 from typing import Any
@@ -1063,6 +1064,80 @@ class AlignedColumns(unittest.TestCase):
         for k in range(4):
             lines += [make_line(text, 72, 100 + 12 * k, size=9), make_line(text, 320, 100 + 12 * k, size=9)]
         self.assertEqual(m.aligned_columns(lines, 1, 612)[1], [])
+
+
+class CellAlignment(unittest.TestCase):
+    """A cell's alignment is judged on the page it was drawn on, and written for the column Asciidoctor applies."""
+
+    def converter(self) -> m.TaggedPdfConverter:
+        return object.__new__(m.TaggedPdfConverter)
+
+    @staticmethod
+    def cell(text: str, x0: float, x1: float, top: float, page: int, rect: tuple, header: bool = False) -> m.Cell:
+        width = (x1 - x0) / max(len(text), 1)
+        chars = [m.Ch(t, x0 + width * k, x0 + width * (k + 1), top + 5, top + 15, 10.0, False, False, None, page) for k, t in enumerate(text)]
+        return m.Cell(header=header, chars=chars, rect=rect, page=page)
+
+    def test_a_cell_on_a_shifted_page_keeps_its_alignment(self) -> None:
+        # the label sits at the left of its box, the figure in the middle; page 2 draws the table 30 pt further right,
+        # and _merge_tables moves the boxes (not the characters) back to line the columns up with page 1
+        rows = [[self.cell("Name", 4, 34, 50, 1, (0, 50, 100, 70), True), self.cell("Value", 30, 70, 50, 1, (100, 50, 200, 70), True)]]
+        for r in range(1, 4):
+            top = 50 + 20 * r
+            row = [self.cell("alpha", 34, 70, top, 2, (30, top, 130, top + 20)), self.cell("12345", 160, 200, top, 2, (130, top, 230, top + 20))]
+            for c in row:
+                c.rect = (c.rect[0] - 30, c.rect[1], c.rect[2] - 30, c.rect[3])
+                c.shift = -30.0
+            rows.append(row)
+        table = m.Table(rows=rows, pages={1, 2}, first_page=1)
+        text = self.converter()._render_table(table, 612)
+        self.assertIn('cols="<50,^50"', text)
+        self.assertNotIn("^|12345", text)  # the column already says it
+
+    def test_a_cell_after_a_cell_that_spans_down_is_written_for_its_own_column(self) -> None:
+        # Asciidoctor gives a cell the alignment of its place among the cells written in the row, so the figure
+        # that follows a row span needs its own mark
+        def fig(text: str, col: int, top: float) -> m.Cell:
+            return self.cell(text, 100 * col + 40, 100 * col + 60, top, 1, (100 * col, top, 100 * col + 100, top + 20))
+
+        label = self.cell("Group", 4, 40, 70, 1, (0, 70, 100, 110))  # spans two rows
+        rows = [[self.cell("Name", 4, 34, 50, 1, (0, 50, 100, 70), True), fig("A", 1, 50), fig("B", 2, 50)],
+                [label, fig("1", 1, 70), fig("2", 2, 70)],
+                [fig("3", 1, 90), fig("4", 2, 90)]]
+        for c in rows[0][1:]:
+            c.header = True
+        table = m.Table(rows=rows, pages={1}, first_page=1)
+        text = self.converter()._render_table(table, 612)
+        self.assertIn('cols="<33,^33,^33"', text)
+        self.assertIn("\n^|3 |4", text)  # the first cell written in that row would take the label column's mark
+
+
+class DrawnColumns(unittest.TestCase):
+    def converter(self) -> m.TaggedPdfConverter:
+        return object.__new__(m.TaggedPdfConverter)
+
+    def test_tags_that_split_a_drawn_cell_do_not_make_a_column(self) -> None:
+        # the page draws two columns; the tags give the second as two cells and the header over it a span of two
+        table = make_table([["Name", "Range"], ["a", "1"]], page=1, header=1, x=(0, 100, 200))
+        table.rows[0][1].tag_colspan = 2
+        extra = m.Cell(header=False, chars=[m.Ch("2", 10, 15, 90, 100, 10.0, False, False, None, 1)], rect=(100, 70, 200, 90), page=1)  # the box of the cell beside it
+        table.rows[1].append(extra)
+        text = self.converter()._render_table(table, 612)
+        self.assertEqual(re.search(r'cols="([^"]*)"', text).group(1).count(",") + 1, 2)
+        self.assertNotIn("2+", text)
+
+    def test_stray_strokes_and_double_rules_are_not_columns(self) -> None:
+        cells = [(x, 10 * r, x + 100, 10 * r + 10) for r in range(10) for x in (0, 100, 200)]
+        self.assertEqual(len(cf._drawn_edges(cells)) - 1, 3)
+        cells.append((50, 0, 54, 10))  # a short stray stroke
+        cells += [(300, 10 * r, 305, 10 * r + 10) for r in range(10)]  # a double rule: strokes at 300 and 305, one edge
+        self.assertEqual(len(cf._drawn_edges(cells)) - 1, 3)
+        cells += [(305, 10 * r, 405, 10 * r + 10) for r in range(10)]  # a real column after it
+        self.assertEqual(len(cf._drawn_edges(cells)) - 1, 4)
+
+    def test_a_strip_with_no_text_is_not_a_column_of_the_content(self) -> None:
+        words = [{"x0": 10, "x1": 40}, {"x0": 130, "x1": 160}]
+        self.assertEqual(cf._drawn_columns([0, 100, 114, 200], words), (3, 2))  # the 14 pt strip holds no word
 
 
 class Renderer(unittest.TestCase):
