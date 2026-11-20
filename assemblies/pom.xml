@@ -40,6 +40,7 @@
     <subprojects>
         <subproject>compendium</subproject>
         <subproject>FA3-D1_Current-State_DeX_Production_Workflow_Overview</subproject>
+        <subproject>FA2-D1_Stakeholder_Materials_1</subproject>
     </subprojects>
 
 </project>

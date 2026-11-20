@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Stakeholder Engagement Materials and Summaries #1 — Reconstruction Assembly
+  ═══════════════════════════════════════════════════════════════════════════
+  Reassembles "Stakeholder Engagement Materials and Summaries #1" (Deloitte
+  Team FA2-D1) from the engage-* topics and the shared dex-disclaimers topic.
+  The cover page and table of contents exist only in this assembly.
+
+  Build:
+    mvn clean verify -pl assemblies/FA2-D1_Stakeholder_Materials_1 -am
+-->
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0
+         http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>dev.ikm.dex.docs</groupId>
+        <artifactId>assemblies</artifactId>
+    </parent>
+
+    <artifactId>FA2-D1_Stakeholder_Materials_1</artifactId>
+    <packaging>pom</packaging>
+
+    <name>FA2-D1_Stakeholder_Materials_1</name>
+    <description>
+        Reconstruction of the Stakeholder Engagement Materials and Summaries #1 report.
+    </description>
+
+    <properties>
+        <pdf.source.document>FA2-D1_Stakeholder_Materials_1</pdf.source.document>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>topics</artifactId>
+            <version>${project.version}</version>
+            <classifier>adoc</classifier>
+            <type>zip</type>
+        </dependency>
+    </dependencies>
+
+</project>

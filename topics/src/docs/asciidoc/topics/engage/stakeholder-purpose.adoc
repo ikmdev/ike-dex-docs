@@ -1,0 +1,32 @@
+// engage-stakeholder-purpose
+// Topic: Purpose
+// Type: concept
+// Status: draft
+:topic-id: engage-stakeholder-purpose
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: stakeholder engagement, record, CDRH, presentation, audience
+:topic-summary: Explains that the FA2-D1 deliverable records stakeholder engagement efforts and the \
+  preparation of materials for FDA's Clinical Evidence Council (CEC), including the Device \
+  Extension (DeX) overview and use cases presentation to CDRH, its unscheduled status and its \
+  primary audience.
+
+[[engage-stakeholder-purpose]]
+= Purpose
+
+indexterm:[stakeholder engagement, Clinical Evidence Council]
+indexterm:[knowledge exchange, DeX]
+indexterm:[organizations, CDRH]
+The purpose of the document serves as a record of stakeholder
+engagement efforts taken and summarizes efforts surrounding
+preparation of materials tied to FDA’s Clinical Evidence Council (CEC).
+The team is supporting a presentation of Device Extension (DeX)
+overview and use cases to the FDA Clinical Evidence Council (CEC).
+The session is currently not scheduled after being moved from
+December 4^th^,
+2026. The primary audience encompassed individuals from across
+the Center for Devices and Radiological Health (CDRH) including
+Michelle Tarver,
+head of CDRH.
+This document will summarize the content the team built to
+prepare for this session.

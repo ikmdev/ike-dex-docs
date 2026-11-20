@@ -48,3 +48,9 @@ include::topics/dex/manual-effort.adoc[leveloffset=+2]
 include::topics/dex/conclusion.adoc[leveloffset=+2]
 
 include::topics/dex/references.adoc[leveloffset=+2]
+
+== Stakeholder Engagement (engage)
+
+include::topics/engage/stakeholder-purpose.adoc[leveloffset=+2]
+
+include::topics/engage/cec-presentation.adoc[leveloffset=+2]

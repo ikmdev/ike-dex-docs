@@ -58,6 +58,16 @@ include::{topics}/topics/dex/conclusion.adoc[leveloffset=+2]
 include::{topics}/topics/dex/references.adoc[leveloffset=+2]
 
 // ============================================================
+// Stakeholder Engagement
+// ============================================================
+
+== Stakeholder Engagement
+
+include::{topics}/topics/engage/stakeholder-purpose.adoc[leveloffset=+2]
+
+include::{topics}/topics/engage/cec-presentation.adoc[leveloffset=+2]
+
+// ============================================================
 // Index (generated from indexterm macros in topic fragments)
 // ============================================================
 

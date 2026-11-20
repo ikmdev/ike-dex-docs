@@ -1,0 +1,132 @@
+// engage-cec-presentation
+// Topic: Clinical Evidence Council (CEC) Presentation Preparation and Overview
+// Type: concept
+// Status: draft
+:topic-id: engage-cec-presentation
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: OHT7, substantial equivalence, GUDID, contact lens, golden set, GeneXpert, BioFire
+:topic-summary: Summarizes the planned OHT7 working-session deck on DeX for the Clinical Evidence \
+  Council, covering the reviewer problem of cross-checking disconnected sources, the 510(k) \
+  substantial equivalence walkthrough, the contact lens non-IVD example, and the status, next \
+  steps and discussion that close the session.
+:topic-notes: Combines the source's chapter heading and its only subsection, Content Overview. \
+  The chapter has no text of its own, so a separate topic would be empty; keeping both in one \
+  topic preserves the source heading structure.
+
+[[engage-cec-presentation]]
+= Clinical Evidence Council (CEC) Presentation Preparation and Overview
+
+== Content Overview
+
+indexterm:[stakeholder engagement, OHT7 working session]
+indexterm:[data quality, real-world data]
+The presentation described is the planned working-session
+material for OHT7 reviewers,
+presented by Dr. Keith Campbell.
+It has three objectives:
+explain how DeX simplifies review,
+demonstrate how it supports decision-making through a 510(k)
+substantial equivalence example,
+and gather OHT7 input to identify and prioritize reviewer pain points.
+It follows the earlier DeX presentations to CEC (from May and
+August 2026) but shifts from a general overview of RWD quality
+to a reviewer-centered conversation about the premarket review workflow.
+
+indexterm:[device data, GUDID]
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+The deck first frames the problem.
+A CDRH reviewer currently cross-checks four or more
+disconnected sources to answer routine questions,
+such as which versions of a predicate are on the market,
+which terminology standard code identifies a test,
+whether the sponsor chose the right product code,
+and whether labeling claims match the submission data.
+The sources are GUDID,
+clinical terminology databases such as Logical Observation
+Identifiers Names and Codes (LOINC^©^) and Systematized
+Nomenclature of Medicine,
+Clinical Terms (SNOMED CT^©^),
+510(k) product classifications,
+package inserts and Indications For Use (IFUs),
+and 510(k) decision summaries.
+DeX is introduced as a structured,
+public-sources-only reference database that “extends” GUDID with linked,
+cited attributes for each device,
+with one record per device.
+DeX is not an instance database,
+a store of confidential submissions,
+or a holder of patient or test-level data.
+Additionally,
+an example of a BioFire Respiratory Panel record shows a full
+set of attributes in a single view,
+and a side-by-side comparison shows how fields line up directly
+between devices.
+
+indexterm:[regulatory science, substantial equivalence]
+indexterm:[device data, GMDN]
+The core of the session is a walkthrough of the 510(k)
+substantial equivalence decision flowchart,
+which maps where DeX removes manual steps.
+These include comparing indications for use against a predicate,
+extracting predicate information (e.g.
+K number and product code),
+and building comparison tables for GMDN codes,
+analytes, detection technologies,
+specimen types,
+and instrument platforms.
+The deck’s with/without comparison uses GeneXpert XPRS4PLEX-10
+as the worked example.
+Without DeX,
+data and codes must be pulled from individual summaries,
+package inserts,
+and separate databases,
+with no single verifiable source of truth for comparison.
+With DeX, reviewers get a side-by-side comparison with values traceable
+back to specific records.
+The deck also positions substantial equivalence support as
+“today’s focus” among broader use cases:
+post-market RWD quality improvement,
+device submission integrity (checking submitted LOINC^©^
+mappings against what an assay actually detects),
+LLM grounding,
+cross-device comparability at scale,
+and cross-cutting domain exploration beyond IVDs.
+
+indexterm:[device data, contact lens]
+indexterm:[device data, UDI exception]
+The deck then moves from IVDs to a non-IVD example utilizing
+contact lenses data which shows that DeX is a general-purpose
+way to represent a device rather than an IVD-only form.
+Contact lens data is not yet required in GUDID.
+FDA granted most soft contact lenses an exception from UDI data
+submission because their thousands of parameter variations
+exceed what GUDID can currently handle,
+and the exception lasts until one year after FDA delivers a
+technical solution.
+As a result,
+GUDID records today are voluntary,
+uneven, and at times inaccurate.
+DeX adds consistent encodings and relationships across material codes,
+GMDN, and GUDID,
+plus family grouping by UDI.
+A proposed next step for discussion with the audience is to
+build a contact lens DeX record from a CDRH “golden-set” lens,
+review it with CDRH,
+and collaborate with SMEs on attributes,
+GMDN codes,
+and SPL examples.
+
+indexterm:[knowledge exchange, DeX record]
+indexterm:[automation, AI-assisted conversion]
+The deck closes with the status,
+next steps,
+and the discussion which will become the main
+stakeholder-engagement output.
+Today there are 20+ DeX records,
+which can be used to compare device predicates and extract
+device characteristics across sources.
+Next steps are scaling curation through LLM-assisted,
+SME-validated workflows and expanding from IVDs to other categories,
+with the longer-term vision that every medical device has a DeX record.
