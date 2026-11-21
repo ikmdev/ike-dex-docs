@@ -1,0 +1,77 @@
+// model-v2-overview
+// Topic: Updated IVD DeX Model Documentation (v2)
+// Type: concept
+// Status: draft
+:topic-id: model-v2-overview
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Tinkar, Concept, Pattern, Semantic, STAMP, design principles, terminology sources, SNOMED CT, LOINC, GUDID
+:topic-summary: Explains that DeX is modeled in Tinkar as Concepts, Patterns and Semantics, states the three \
+  design principles (reuse before creation, encapsulate rather than specialize, distinct purpose per field) \
+  and tabulates the role each terminology source plays in the v2 model.
+:topic-related: model-v2-diagram
+
+[[model-v2-overview]]
+= Updated IVD DeX Model Documentation (v2)
+
+indexterm:[interoperability, TINKAR]
+indexterm:[knowledge exchange, Concept]
+indexterm:[knowledge exchange, Pattern]
+indexterm:[knowledge exchange, Semantic]
+indexterm:[coordinates, STAMP coordinate]
+DeX is modeled in the Terminology Knowledge Architecture (Tinkar).
+Tinkar represents knowledge as Concepts (identified by
+Universally Unique Identifiers [UUIDs] and Status,
+Time, Author,
+Module, and Path [STAMP] coordinates),
+Patterns (sets of field definitions),
+and Semantics (instances of a Pattern attached to a reference component).
+Three principles shape the DeX design:
+
+* *Reuse before creation.*
+Leverage existing data,
+such as Tinkar starter data,
+SNOMED-CT®,
+LOINC®,
+and GUDID Components,
+creating new Components only when necessary.
+* *Encapsulate rather than specialize.*
+Where a source such as GUDID already provides the information
+(for example,
+device Concepts),
+DeX adds a new Pattern that references it rather than redefining it.
+* *Distinct purpose and meaning per field.*
+The reasoner uses these concepts to determine equivalence,
+so each field definition should be as specific as possible.
+
+indexterm:[knowledge exchange, DeX starter data]
+indexterm:[terminology, SNOMED CT]
+indexterm:[terminology, LOINC]
+indexterm:[device data, GUDID]
+Modeling DeX requires a dataset containing,
+at minimum,
+SNOMED-CT® International Edition,
+LOINC®, and GUDID.
+Table 1 summarizes the role each source plays.
+
+.Terminology sources and their roles in DeX
+[cols="15h,35,50",options="header"]
+|===
+|Source |Used for |Appears in
+
+|GUDID
+|Device Concepts, primary device identifiers, FDA product codes, predicate devices, associated devices, instruments
+|Core Device Concept; Identifier and Stated Definition Semantics; Predicate Device Pattern; Associated Devices Pattern; Test Performed on Specimen Pattern (Instrument field)
+
+|LOINC®
+|The test the device performs
+|Test Performed on Specimen Pattern (Test Performed field)
+
+|SNOMED-CT®
+|Specimens, result qualifier values, units of measure, interpretations
+|Test Performed on Specimen Pattern (Specimen and Units fields); Results Description Pattern; Limit Metrics Pattern; Measuring Range Pattern; Device Performance Pattern; Population Reference Range Pattern; Reference Limit Pattern
+
+|Tinkar starter data
+|Description and identifier Patterns, stated definitions, comparison operators
+|Description Semantics, Identifier Semantics, Stated Definitions, operator fields
+|===

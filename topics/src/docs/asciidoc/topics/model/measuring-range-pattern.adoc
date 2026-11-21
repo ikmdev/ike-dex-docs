@@ -1,0 +1,55 @@
+// model-measuring-range-pattern
+// Topic: Measuring Range Pattern
+// Type: reference
+// Status: draft
+:topic-id: model-measuring-range-pattern
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: Measuring Range, reportable range, numeric range, value operators, Results Description, Test Performed Semantic
+:topic-summary: Defines the Measuring Range Pattern, which extends the Results Description Semantic with the \
+  reportable numeric range of a device on a Test Performed Semantic, treats values outside it as invalid, \
+  and tabulates its five fields.
+:topic-related: model-refined-documentation, model-test-performed-pattern, model-results-description-pattern
+:topic-notes: The source table's Min Value Operator row carries a stray empty numbered paragraph (it prints \
+  as "1." in the Word document); it holds no content and is not reproduced.
+
+[[model-measuring-range-pattern]]
+= Measuring Range Pattern
+
+indexterm:[device data, measuring range]
+indexterm:[knowledge exchange, Semantic]
+indexterm:[terminology, UCUM]
+If the results returned by the device for a given test can be
+represented as a numeric range,
+extend the Results Description Semantic using this Pattern.
+The information in this Pattern represents the reportable range for a device.
+If the values fall outside this range,
+they are considered invalid.
+
+The reference component will be a Test Performed Semantic.
+
+.Measuring Range Pattern fields
+[cols="25h,17,58",options="header"]
+|===
+|Field |Field Type |Notes
+
+|Max Value Operator
+|Component
+|
+
+|Max Value
+|Float
+|
+
+|Min Value Operator
+|Component
+|
+
+|Min Value
+|Float
+|
+
+|Example UCUM Units
+|Component
+|Utilize a SNOMED-CT® Concept when possible
+|===

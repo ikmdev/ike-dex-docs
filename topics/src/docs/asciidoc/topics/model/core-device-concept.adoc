@@ -1,0 +1,33 @@
+// model-core-device-concept
+// Topic: Core Device Concept
+// Type: concept
+// Status: draft
+:topic-id: model-core-device-concept
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Device Concept, GUDID, Fully Qualified Name, UDI, FDA product code, Description Semantic, Identifier Semantic, Stated Definition
+:topic-summary: Describes the Core Device Concept sourced from GUDID, which always carries a Fully Qualified \
+  Name, a Unique Device Identifier and an Is-A relationship to its FDA product codes, and what a DeX author \
+  adds when DeX data does not align with GUDID.
+:topic-related: model-refined-documentation
+
+[[model-core-device-concept]]
+= Core Device Concept
+
+indexterm:[device data, GUDID]
+indexterm:[device data, FDA product code]
+indexterm:[knowledge exchange, Concept]
+The Core Device Concepts for DeX information are sourced from GUDID.
+The Device Concept always contains a Fully Qualified Name,
+Unique Device Identifier (UDI) (GS1),
+and an Is-A relationship to its FDA Product Code(s).
+
+indexterm:[knowledge exchange, Semantic]
+The existing information may or may not align with the
+information provided in the gathered DeX data for a Device.
+If it does not align,
+the DeX author should consider adding:
+
+* A Device Extension specific name as an “Other Name” as a Description Semantic
+* Additional Device Identifiers or FDA PreMarket Submission Codes as Identifier Semantic(s)
+* Additional Is-A relationships to FDA Product Codes as part of the Stated Definition Semantic

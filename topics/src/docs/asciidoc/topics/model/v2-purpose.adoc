@@ -1,0 +1,26 @@
+// model-v2-purpose
+// Topic: Purpose
+// Type: concept
+// Status: draft
+:topic-id: model-v2-purpose
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: refined data model, IVD devices, GUDID, version 2, data elements, change record
+:topic-summary: States that the deliverable presents the refined DeX data model for laboratory devices, \
+  beginning with in vitro diagnostic (IVD) devices catalogued in GUDID, detailing revised and new data \
+  elements and recording what changed from the previous model version.
+
+[[model-v2-purpose]]
+= Purpose
+
+indexterm:[knowledge exchange, DeX v2 model]
+indexterm:[device data, IVD device]
+indexterm:[device data, GUDID]
+indexterm:[knowledge exchange, Pattern]
+This document delivers the refined data model for DeX,
+the extension that gives meaning to laboratory devices,
+beginning with in vitro diagnostic (IVD) devices catalogued in GUDID.
+This document details revisions to existing data elements,
+identifies new elements and where their Patterns stand in
+version 2 (v2),
+and records what changed from the previous DeX model version.

@@ -1,0 +1,26 @@
+// model-associated-devices-pattern
+// Topic: Associated Devices Pattern
+// Type: concept
+// Status: draft
+:topic-id: model-associated-devices-pattern
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: associated devices, reagents, Component List, GUDID, Device Concept
+:topic-summary: Describes the Associated Devices Pattern, which represents other devices such as reagents that \
+  are necessary for the primary device to perform a test, using a Component List of the relevant GUDID \
+  device Concepts on a Semantic whose reference component is the Device Concept.
+:topic-related: model-refined-documentation
+
+[[model-associated-devices-pattern]]
+= Associated Devices Pattern
+
+indexterm:[device data, associated device]
+indexterm:[device data, GUDID]
+indexterm:[knowledge exchange, Semantic]
+If multiple devices,
+such as reagents,
+are necessary to support the primary device performing the test,
+utilize this Pattern to represent those relationships.
+The reference component for an Associated Devices Semantic is
+the Device Concept and the field value is a Component List that
+contains each relevant associated Device Concept from the GUDID dataset.

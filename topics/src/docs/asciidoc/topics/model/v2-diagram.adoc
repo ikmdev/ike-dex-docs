@@ -1,0 +1,176 @@
+// model-v2-diagram
+// Topic: DeX v2 Model
+// Type: reference
+// Status: draft
+:topic-id: model-v2-diagram
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: DeX v2 model, model diagram, change summary, change log, Device Concept, Patterns, Reference Limit, Measuring Range, Limit Metrics, Predicate Device
+:topic-summary: Presents the DeX v2 model diagram and its annotated version, summarizes what changed from the \
+  previous iteration (identity scaffold, four new Patterns, controlled units, split reference intervals) and \
+  gives the complete element-by-element change log.
+:topic-related: model-v2-overview, model-refined-documentation
+:topic-notes: Above the 5000-character maximum. The two figures and the change log table are indivisible, and \
+  splitting them would add headings the source document does not have.
+
+[[model-v2-diagram]]
+= DeX v2 Model
+
+indexterm:[knowledge exchange, DeX v2 model]
+indexterm:[knowledge exchange, DeX v1 model]
+Figure 1 provides an overview of the DeX v2 model with a
+denotation of source information and the data elements within each Concept.
+
+.DeX v2 Model Diagram
+image::model/dex-v2-model-diagram.png[Diagram of the DeX v2 model: a Device Concept with Description Semantics, Identifier Semantics and Stated Definitions above it and the Predicate Device, Associated Devices, Test Performed on Specimen, Device Company, Indication For Use and Regulatory Classification Patterns below it; the Test Performed on Specimen Pattern leads to the Measuring Range, Results Description, Limit Metrics and Device Performance Patterns; Results Description leads through a quantitative-results decision to the Population Reference Range and Reference Limit Patterns; a colour legend marks GUDID data and LOINC and SNOMED and Tinkar starter data and new DeX components,scaledwidth=90%]
+
+The change summary from the previous iteration of the DeX model
+to v2 can be summarized as:
+
+* *A standard identity scaffold for the Device Concept.*
+The model now carries Semantics for Descriptions
+(Fully Qualified Name [FQN] and device names),
+Identifiers (Primary Device Identifier [DI] and premarket submission numbers),
+and Stated Definition Semantics (Is-A links to FDA product codes).
+* *Four Patterns added to the diagram:*
+Predicate Device,
+Measuring Range,
+Limit Metrics,
+and Reference Limit.
+* *The Limit Metrics Pattern now contains the Detection Limit*,
+as a better representation to support limits of detection (LoD),
+limits of quantitation (LoQ),
+and limits of blank (LoB).
+* *Units of measure are now controlled Concepts.*
+Example Unified Code for Units of Measure (UCUM) Units changed from a free-text string
+to a SNOMED-CT® Concept on the Test Performed and Population Reference Range Patterns.
+* *Reference intervals are modeled as two distinct cases:*
+a two-sided Population Reference Range,
+or a one-sided Reference Limit tied to a percentile.
+A new decision step in the model,
+represented below Results Description (previously Allowed Results) on the diagram,
+routes quantitative results to the correct Pattern.
+* *Additional Interpretation field for Population Reference Range.*
+The interpretation field allows the DeX model to support multiple reference ranges
+for a device that differ by interpretation.
+
+Figure 2 marks every difference between the previous DeX model
+and v2 diagrams on the v2 layout.
+Green outlines mark elements added to the model,
+and blue outlines mark revised fields or labels.
+
+.DeX v2 diagram annotated with changes
+image::model/dex-v2-annotated-diagram.png[The DeX v2 model diagram with green outlines around elements added to the model and blue outlines around revised fields or labels and a change key reading Change key v1.5 to v2: added to the diagram and revised field or label,scaledwidth=90%]
+
+indexterm:[device data, limit metrics]
+indexterm:[terminology, UCUM]
+A complete change log can be viewed within Table 2 detailing the added,
+adjusted, or modified elements for the v2 DeX model.
+
+.DeX v2 change log
+[cols="16h,21,27,10,26",options="header"]
+|===
+|Element |Previous DeX Model |v2 diagram |Change |Notes
+
+|Description Semantics
+|Not depicted
+|FQN: existing FQN in GUDID data (brand name). Other Names: device name(s).
+|*Added*
+|Tinkar starter-data Pattern. The narrative already described the FQN and “Other Name.”
+
+|Identifier Semantics
+|Not depicted
+|GUDID: Primary DI number(s). DeX/GUDID: FDA premarket submission number.
+|*Added*
+|Records device identity and regulatory submission lineage.
+
+|Stated Definitions
+|Not depicted
+|Is-A: FDA product code(s).
+|*Added*
+|Classifies the device under FDA product codes.
+
+|Predicate Device Pattern
+|Not depicted
+|Predicate Device: GUDID Component Set.
+|*Added*
+|Records the predicate device(s) cited in the submission.
+
+|Indication for Use Pattern
+|“Indications for Use”: String
+|“Indication For Use (Applicable Pop)”: String
+|*Revised*
+|Singular label, with the applicable population noted. One Semantic per indication.
+
+|Associated Devices Pattern
+|Associated Device Set: GUDID Concept(s)
+|Associated Device Set: GUDID Concept(s)
+|Unchanged
+|—
+
+|Device Company Pattern
+|Device Labeler: DeX Concept
+|Device Labeler: DeX Concept
+|Unchanged
+|—
+
+|Test Performed: Detection Limit
+|Float field on the Pattern
+|Removed from the Pattern
+|*Relocated*
+|Now carried by Limit Metrics, which types the limit (LoD, LoB, LoQ).
+
+|Test Performed: Ex UCUM Units
+|String
+|Concept (SNOMED-CT®)
+|*Revised*
+|Units become controlled, computable values.
+
+|Measuring Range Pattern
+|Not depicted
+|Max Value, Min Value (Float); Max and Min Value Operators (Tinkar Concept); Units (Concept)
+|*Added*
+|Reportable range. Values outside the range are invalid.
+
+|Allowed Results to Results Description
+|“Allowed Results Pattern”: Qualifier Value, SNOMED-CT® Concept(s)
+|“Results Description”: Qualifier Value, SNOMED-CT® Concept(s)
+|*Revised*
+|Renamed. Field unchanged.
+
+|Limit Metrics Pattern
+|Not depicted
+|Limit Value (Float); Ex UCUM Units (Concept); Metric Type (Concept: LoD, LoB, LoQ)
+|*Added*
+|Replaces the single Detection Limit field.
+
+|Device Performance Pattern
+|Order: Performance Metric (Concept), UCUM Units, Confidence Level, Interval Upper, Interval Lower, Metric Value
+|Order: Metric Value, UCUM Units (Concept, %), Confidence Level, Interval Upper, Interval Lower, Performance Metric (Concept)
+|*Revised*
+|Fields reordered. The diagram flags “Move to Field 1” for Performance Metric (open item).
+
+|Quantitative-results branch
+|Population Reference Range follows “Returns Quantitative Results” directly
+|Decision: “Has a Reference Range” leads to Population Reference Range; “Has a Upper/Lower Reference Limit” leads to Reference Limit
+|*Added*
+|Makes the two reference-interval cases explicit.
+
+|Population Reference Range Pattern
+|Six fields; Ex UCUM Units: String
+|Adds Interpretation (Concept); Ex UCUM Units: Concept
+|*Revised*
+|Supports multiple ranges per test, such as Normal and Pre-diabetic.
+
+|Reference Limit Pattern
+|Not depicted
+|Population, Reference Limit Value, Value Operator, Ex UCUM Units, Interpretation, Percentile Value, Reference Limit Type
+|*Added*
+|One-sided limits tied to a percentile.
+
+|Legend and notation
+|“DeX Concept” (green)
+|“New DeX Component” (green); cardinality notation for one vs. one-or-many Semantics
+|*Revised*
+|Clarifies what is new and how many Semantics a Pattern allows.
+|===

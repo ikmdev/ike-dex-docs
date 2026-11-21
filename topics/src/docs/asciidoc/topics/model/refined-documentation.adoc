@@ -1,0 +1,35 @@
+// model-refined-documentation
+// Topic: Refined Data Model Documentation
+// Type: concept
+// Status: draft
+:topic-id: model-refined-documentation
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Pattern documentation, working dataset, Komet, extension Concept, SNOMED CT, LOINC, GUDID
+:topic-summary: Introduces the Pattern-by-Pattern documentation of DeX v2, requires a working dataset that \
+  contains SNOMED CT International Edition, LOINC and GUDID, and tells authors to create missing source \
+  Concepts in Komet as extension Concepts rather than overloading an existing one.
+:topic-related: model-v2-diagram, model-core-device-concept, model-device-company-pattern, \
+  model-indications-for-use-pattern, model-predicate-device-pattern, model-associated-devices-pattern, \
+  model-test-performed-pattern, model-limit-metrics-pattern, model-device-performance-pattern, \
+  model-results-description-pattern, model-measuring-range-pattern, model-population-reference-range, \
+  model-reference-limit-pattern
+
+[[model-refined-documentation]]
+= Refined Data Model Documentation
+
+indexterm:[knowledge exchange, Pattern]
+indexterm:[knowledge exchange, Komet]
+indexterm:[terminology, SNOMED CT]
+indexterm:[terminology, LOINC]
+indexterm:[device data, GUDID]
+This section documents DeX v2 Pattern by Pattern and provides
+the purpose of the Patterns.
+To model DeX,
+the working dataset must contain SNOMED-CT® International Edition,
+LOINC®, and GUDID.
+Where a source Concept cannot be found (for example,
+a result value with no SNOMED-CT® code),
+the DeX author should create it in Komet as an extension
+Concept rather than overloading an existing one that may have a
+differing meaning or intention.

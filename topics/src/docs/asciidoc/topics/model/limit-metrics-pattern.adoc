@@ -1,0 +1,44 @@
+// model-limit-metrics-pattern
+// Topic: Limit Metrics Pattern
+// Type: reference
+// Status: draft
+:topic-id: model-limit-metrics-pattern
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: Limit Metrics, limit of detection, limit of quantitation, limit of blank, Test Performed Semantic, UCUM
+:topic-summary: Defines the Limit Metrics Pattern, which records limits of detection, quantitation or blank \
+  for a test with one Semantic per limit typed by a field, requires at least one Semantic for every Test \
+  Performed Semantic, and tabulates its three fields.
+:topic-related: model-refined-documentation, model-test-performed-pattern
+
+[[model-limit-metrics-pattern]]
+= Limit Metrics Pattern
+
+indexterm:[device data, limit metrics]
+indexterm:[device data, limit of detection]
+indexterm:[knowledge exchange, Semantic]
+This Pattern is used to indicate any associated limits of detection,
+quantitation or blank.
+Tests may have one or many of these limits.
+A Limit Metric Semantic should be created for each relevant limit.
+The type of limit is indicated within a field in the Semantic.
+The reference component is a Test Performed Semantic and every
+Test Performed Semantic should have at least one Limit Metrics Semantic.
+
+.Limit Metrics Pattern fields
+[cols="22h,12,66",options="header"]
+|===
+|Field |Field Type |Notes
+
+|Limit Value
+|Float
+|
+
+|Limit Type
+|Component
+|Use Komet Concept for ‘Limit of Detection’, ‘Limit of Quantitation’ or ‘Limit of Blank’
+
+|Example UCUM Units
+|Component
+|Use a SNOMED-CT® Concept
+|===

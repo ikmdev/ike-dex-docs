@@ -1,0 +1,26 @@
+// model-indications-for-use-pattern
+// Topic: Indications for Use Pattern
+// Type: concept
+// Status: draft
+:topic-id: model-indications-for-use-pattern
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Indications for Use, patient population, string, Device Concept, Semantic
+:topic-summary: Describes the Indications for Use Pattern, which records the patient population a device serves \
+  or why a test using it might be ordered as a string on the Device Concept, with one Semantic for each \
+  indication when a device has several.
+:topic-related: model-refined-documentation
+
+[[model-indications-for-use-pattern]]
+= Indications for Use Pattern
+
+indexterm:[device data, indication for use]
+indexterm:[knowledge exchange, Pattern]
+indexterm:[knowledge exchange, Semantic]
+This information describes the patient population a device serves,
+or why a test using the device might be ordered.
+This information is represented using the Indications for Use Pattern.
+The reference component is the Device Concept,
+and the Field Value will be a string with the indication for use.
+When a Device has multiple indications for use,
+each is represented by a separate Semantic.

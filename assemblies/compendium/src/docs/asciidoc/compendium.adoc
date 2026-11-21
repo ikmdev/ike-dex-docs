@@ -90,6 +90,48 @@ include::{topics}/topics/llm/limitations.adoc[leveloffset=+2]
 include::{topics}/topics/llm/findings-conclusion.adoc[leveloffset=+2]
 
 // ============================================================
+// DeX v2 Model Documentation
+// ============================================================
+
+== DeX v2 Model Documentation
+
+include::{topics}/topics/model/v2-background.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/v2-purpose.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/v2-overview.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/v2-diagram.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/refined-documentation.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/core-device-concept.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/device-company-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/indications-for-use-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/predicate-device-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/associated-devices-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/test-performed-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/limit-metrics-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/device-performance-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/results-description-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/measuring-range-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/population-reference-range.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/reference-limit-pattern.adoc[leveloffset=+2]
+
+include::{topics}/topics/model/v2-conclusion.adoc[leveloffset=+2]
+
+// ============================================================
 // Index (generated from indexterm macros in topic fragments)
 // ============================================================
 

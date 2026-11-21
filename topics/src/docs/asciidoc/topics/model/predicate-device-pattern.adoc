@@ -1,0 +1,25 @@
+// model-predicate-device-pattern
+// Topic: Predicate Device Pattern
+// Type: concept
+// Status: draft
+:topic-id: model-predicate-device-pattern
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: predicate device, FDA approval, Component Set, GUDID, Device Concept
+:topic-summary: Describes the Predicate Device Pattern, which records the predicate device on which a device's \
+  FDA submission was based, using a Component Set of the relevant GUDID predicate device Concept as the \
+  field value of a Semantic on the Device Concept.
+:topic-related: model-refined-documentation
+
+[[model-predicate-device-pattern]]
+= Predicate Device Pattern
+
+indexterm:[device data, predicate device]
+indexterm:[device data, GUDID]
+indexterm:[knowledge exchange, Semantic]
+Many devices are submitted for FDA approval based on a
+predicate device.
+This Pattern indicates the predicate device when applicable.
+The reference component for a Predicate Device Semantic is the
+Device Concept and the field value is a Component Set that
+contains the relevant predicate device Concept from the GUDID dataset.

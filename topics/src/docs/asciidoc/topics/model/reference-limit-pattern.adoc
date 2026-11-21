@@ -1,0 +1,64 @@
+// model-reference-limit-pattern
+// Topic: Reference Limit Pattern
+// Type: reference
+// Status: draft
+:topic-id: model-reference-limit-pattern
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: Reference Limit, upper reference limit, lower reference limit, percentile, value operator, Test Performed Semantic
+:topic-summary: Defines the Reference Limit Pattern, used when a quantitative test has only an upper or lower \
+  reference bound tied to a percentile rather than a range, tabulates its seven fields and lists the Tinkar \
+  comparison operator Concepts and their UUIDs.
+:topic-related: model-refined-documentation, model-test-performed-pattern, model-population-reference-range
+
+[[model-reference-limit-pattern]]
+= Reference Limit Pattern
+
+indexterm:[device data, reference limit]
+indexterm:[knowledge exchange, Semantic]
+indexterm:[terminology, SNOMED CT]
+This Pattern is used when a test with quantitative results has
+a reference limit with only an upper or lower bound rather than a range.
+Reference limits indicate a percentile so the Pattern includes
+a field to indicate this.
+
+The reference component is the Test Performed Semantic.
+
+.Reference Limit Pattern fields
+[cols="22h,12,66",options="header"]
+|===
+|Field |Field Type |Notes
+
+|Population
+|String
+|Note: If the reference limit is universal, indicate that in a standardized way
+
+|Reference Limit Value
+|Float
+|
+
+|Reference Limit Value Operator
+|Component
+a|Utilize
+
+. Greater than or equal to: c1baba19-e918-5d2c-8fa4-b0ad93e03186
+. Greater than: 65af466b-360c-58b2-8b7d-2854150029a8
+. Less than or equal to: 6dfacbd5-8344-5794-9fda-bec95b2aa6c9
+. Less than: 6f96e8cf-5568-5e49-8a90-aa6c65125ee9
+
+|Reference Limit Type
+|Component
+|Utilize Komet Concepts for ‘Upper reference limit’ or ‘Lower reference limit’
+
+|Example UCUM Units
+|Component
+|SNOMED-CT® Concept
+
+|Interpretation
+|Component
+|Use a SNOMED-CT® Concept to represent the indication for this range. Typically the reference range indicates ‘Normal’ or ‘Healthy’ but in some cases there may be additional ranges, such as ‘pre-diabetic’ for HbA1c.
+
+|Percentile Value
+|Float
+|
+|===

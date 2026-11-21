@@ -1,0 +1,31 @@
+// model-results-description-pattern
+// Topic: Results Description Pattern
+// Type: concept
+// Status: draft
+:topic-id: model-results-description-pattern
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Results Description, allowed results, qualifier values, SNOMED CT, Component Set, Komet, extension Concepts
+:topic-summary: Describes the Results Description Pattern, which expresses the set of allowable results a \
+  device can return as SNOMED CT qualifier values in a Component Set on a Test Performed Semantic, and \
+  recommends authoring missing result Concepts in Komet as SNOMED CT extensions.
+:topic-related: model-refined-documentation, model-test-performed-pattern, model-measuring-range-pattern
+
+[[model-results-description-pattern]]
+= Results Description Pattern
+
+indexterm:[device data, allowed results]
+indexterm:[terminology, SNOMED CT]
+indexterm:[knowledge exchange, Komet]
+This Pattern expresses the set of allowable results that can be
+returned by the Device.
+The reference component will be a Test Performed Semantic.
+The allowed results are expressed as SNOMED-CT® qualifier values,
+and the field value is a Component Set.
+The values for this Semantic are sourced from the DeX Results
+Description (SNOMED-CT®) source data field.
+
+If a test does not return results that can be captured using an
+existing SNOMED-CT® code,
+we recommend using Komet to author the necessary result
+Concepts as extensions to SNOMED-CT®.

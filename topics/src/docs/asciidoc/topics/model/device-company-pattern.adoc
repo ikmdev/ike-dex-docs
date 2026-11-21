@@ -1,0 +1,32 @@
+// model-device-company-pattern
+// Topic: Device Company Pattern
+// Type: concept
+// Status: draft
+:topic-id: model-device-company-pattern
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Device Company, Device Labeler, Company Concept, Fully Qualified Name, Is-A, Semantic
+:topic-summary: Explains how to represent Device Companies (Device Labelers), which the Tinkar GUDID dataset \
+  does not yet carry, by creating a Concept per unique company value with an Is-A link to the Company \
+  Concept and attaching it to the Device Concept through a Company Pattern Semantic.
+:topic-related: model-refined-documentation
+
+[[model-device-company-pattern]]
+= Device Company Pattern
+
+indexterm:[device data, device labeler]
+indexterm:[knowledge exchange, Concept]
+indexterm:[knowledge exchange, Semantic]
+In the Tinkar GUDID dataset currently being used,
+Device Companies (or Device Labelers) for devices are not
+currently available,
+although it is present in GUDID.
+For each unique company value in DeX Data,
+the user must generate a Concept that utilizes the Company
+value in the DeX source data as the Fully Qualified Name.
+The Concept will have an Is-A relationship to the Company
+(Device Labeler) Concept.
+Once the Company Concept is created,
+the user will create a Semantic of the Company Pattern.
+The reference component will be the Device Concept,
+and the Field Value will be the Company Concept.

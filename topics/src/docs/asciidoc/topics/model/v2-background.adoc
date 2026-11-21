@@ -1,0 +1,45 @@
+// model-v2-background
+// Topic: Background
+// Type: concept
+// Status: draft
+:topic-id: model-v2-background
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Device Extension, DeX, SNOMED CT, LOINC, GUDID, 510(k), package insert, public sources
+:topic-summary: Defines the Device Extension (DeX) as a structured reference database combining SNOMED CT, \
+  LOINC and GUDID elements to give meaning to FDA-approved devices, the tests each device performs and \
+  the results expected, sourced only from public documents and holding no instance data.
+
+[[model-v2-background]]
+= Background
+
+indexterm:[knowledge exchange, DeX]
+indexterm:[terminology, SNOMED CT]
+indexterm:[terminology, LOINC]
+indexterm:[device data, GUDID]
+indexterm:[device data, 510(k) premarket submission]
+indexterm:[device data, package insert]
+The Device Extension (DeX) is a structured,
+comprehensive reference database that combines elements from
+Systematized Nomenclature of Medicine – Clinical Terms (SNOMED-CT®),
+Logical Observation Identifiers Names and Codes (LOINC®),
+and the Global Unique Device Identification Database (GUDID) to
+give meaning to FDA-approved devices.
+DeX data expands the core device information in GUDID,
+describes the tests each device can perform,
+and specifies the results expected for each device-test combination.
+For each device,
+the information is sourced from the relevant FDA device
+submission documents and other public sources.
+DeX carries high-value data fields relevant to each device:
+what it is,
+what it measures,
+and how its results should be represented.
+It exclusively uses public sources to link information across GUDID,
+510(k) submission information and package insert details,
+SNOMED-CT®,
+LOINC®, and more.
+Importantly,
+DeX is not an instance database containing any individual tests,
+devices, patient information,
+or confidential submissions.

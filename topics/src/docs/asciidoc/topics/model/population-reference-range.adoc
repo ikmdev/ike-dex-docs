@@ -1,0 +1,57 @@
+// model-population-reference-range
+// Topic: Population Reference Range Pattern
+// Type: reference
+// Status: draft
+:topic-id: model-population-reference-range
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: Population Reference Range, reference range, population, interpretation, HbA1c, quantitative results, Test Performed Semantic
+:topic-summary: Defines the Population Reference Range Pattern, which represents the reference range for \
+  quantitative results for a given population on a Test Performed Semantic, supports several ranges per test \
+  through an Interpretation field, and tabulates its seven fields.
+:topic-related: model-refined-documentation, model-test-performed-pattern, model-reference-limit-pattern
+
+[[model-population-reference-range]]
+= Population Reference Range Pattern
+
+indexterm:[device data, reference range]
+indexterm:[knowledge exchange, Semantic]
+indexterm:[terminology, SNOMED CT]
+This Pattern represents the reference range for quantitative
+test results for a given population.
+The reference range will vary by population and laboratory.
+The reference component is the Test Performed Semantic.
+
+.Population Reference Range Pattern fields
+[cols="22h,12,66",options="header"]
+|===
+|Field |Field Type |Notes
+
+|Population
+|String
+|Note: If the reference range is universal, indicate that in a standardized way
+
+|Max Value Operator
+|Component
+|
+
+|Max Value
+|Float
+|
+
+|Min Value Operator
+|Component
+|
+
+|Min Value
+|Float
+|
+
+|Example UCUM Units
+|Component
+|SNOMED-CT® Concept
+
+|Interpretation
+|Component
+|Use a SNOMED-CT® Concept to represent the indication for this range. Typically the reference range indicates ‘Normal’ or ‘Healthy’ but in some cases there may be additional ranges, such as ‘pre-diabetic’ for hemoglobin A1c (HbA1c).
+|===

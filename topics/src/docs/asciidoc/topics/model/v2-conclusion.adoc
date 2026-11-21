@@ -1,0 +1,39 @@
+// model-v2-conclusion
+// Topic: Conclusion
+// Type: concept
+// Status: draft
+:topic-id: model-v2-conclusion
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: DeX v2, durable foundation, controlled terminologies, computable knowledge, SNOMED CT, LOINC, GUDID, Tinkar
+:topic-summary: Concludes that the DeX v2 model moves the Device Extension from a prototype toward a durable \
+  foundation, giving devices consistent identity and regulatory lineage and replacing free text with \
+  controlled terminologies so content can be validated, compared, versioned and reused.
+
+[[model-v2-conclusion]]
+= Conclusion
+
+indexterm:[knowledge exchange, DeX v2 model]
+indexterm:[interoperability, TINKAR]
+indexterm:[terminology, SNOMED CT]
+indexterm:[terminology, LOINC]
+indexterm:[device data, GUDID]
+The DeX v2 model moves the Device Extension from an initial,
+promising prototype toward a durable foundation for
+representing laboratory devices as structured,
+computable knowledge.
+The refinements from the initial IVD work give the model a
+consistent device identity and regulatory lineage.
+They also let it express the full range of analytical and
+clinical performance content that labeling communicates,
+enhanced with controlled terminologies in place of free text so
+that each value carries a precise,
+computable meaning.
+Anchoring the model in SNOMED-CT®,
+LOINC®, GUDID,
+and the Tinkar framework means this content is no longer locked
+in narrative documents.
+It can be validated,
+compared across devices,
+versioned,
+and reused without losing meaning.

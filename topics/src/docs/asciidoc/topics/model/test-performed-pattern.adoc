@@ -1,0 +1,81 @@
+// model-test-performed-pattern
+// Topic: Test Performed on Specimen Pattern
+// Type: reference
+// Status: draft
+:topic-id: model-test-performed-pattern
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: Test Performed, analyte, specimen, target, instrument, LOINC, SNOMED CT, UCUM, detection limit, Component Set
+:topic-summary: Defines the Test Performed on Specimen Pattern, which describes a single test a device can \
+  perform with one Semantic per analyte-specimen pair, lists its fields with source data fields and notes, \
+  and explains when several Semantics are needed for different units or specimens.
+:topic-related: model-refined-documentation, model-limit-metrics-pattern, model-device-performance-pattern, \
+  model-results-description-pattern, model-measuring-range-pattern, model-population-reference-range, \
+  model-reference-limit-pattern
+
+[[model-test-performed-pattern]]
+= Test Performed on Specimen Pattern
+
+indexterm:[device data, test performed]
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+indexterm:[terminology, UCUM]
+This Pattern describes a single test that the device is capable of performing.
+The reference component is the device Concept.
+Test Performed Semantics should be unique at the
+analyte-specimen level.
+
+Table 3 shows the Pattern is structured as follows:
+
+.Test Performed on Specimen Pattern fields
+[cols="15h,13,17,55",options="header"]
+|===
+|Pattern Field |Field Type |DeX Source Data Field |Notes
+
+|Test Performed
+|Component
+|Test Performed LOINC® Code
+|From LOINC®
+
+|Target
+|Component Set
+|Target
+|Use an existing Concept from a terminology standard (for example, SNOMED-CT® or LOINC®) when one is available. Otherwise, generate a Concept for each unique Target.
+
+|Analyte
+|Component Set
+|Analyte
+|Use an existing Concept from a terminology standard when one is available. Otherwise, generate a Concept for each unique Analyte.
+
+|Instrument
+|Component
+|Instrument Device ID
+|From GUDID
+
+|Specimen
+|Component Set
+|Specimen
+|From SNOMED-CT®
+
+|Detection Limit
+|Float
+|Detection Limit
+|
+
+|Ex UCUM Units
+|String
+|Units of Measure
+|
+|===
+
+indexterm:[device data, limit of detection]
+A single test may require the creation of multiple Test
+Performed Semantics if the output can be represented using
+multiple units of measure or if different specimens have
+different detection limits for the same unit of measure.
+
+There is a unique Test Performed Semantic for each
+analyte-specimen pair.
+This allows related information including reference ranges,
+limits of detection and units of measure to be associated to
+the correct analyte and specimen.

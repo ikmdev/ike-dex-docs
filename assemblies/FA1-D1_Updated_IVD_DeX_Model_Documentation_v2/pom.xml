@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Updated IVD DeX Model Documentation (v2) — Reconstruction Assembly
+  ═══════════════════════════════════════════════════════════════════
+  Reassembles "Updated IVD DeX Model Documentation (v2)" (Deloitte
+  Team FA1-D1) from the model-* topics and the shared dex-disclaimers topic.
+  The cover page and table of contents exist only in this assembly.
+
+  Build:
+    mvn clean verify -pl assemblies/FA1-D1_Updated_IVD_DeX_Model_Documentation_v2 -am
+-->
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0
+         http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>dev.ikm.dex.docs</groupId>
+        <artifactId>assemblies</artifactId>
+    </parent>
+
+    <artifactId>FA1-D1_Updated_IVD_DeX_Model_Documentation_v2</artifactId>
+    <packaging>pom</packaging>
+
+    <name>FA1-D1_Updated_IVD_DeX_Model_Documentation_v2</name>
+    <description>
+        Reconstruction of the Updated IVD DeX Model Documentation (v2) report.
+    </description>
+
+    <properties>
+        <pdf.source.document>FA1-D1_Updated_IVD_DeX_Model_Documentation_v2</pdf.source.document>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>topics</artifactId>
+            <version>${project.version}</version>
+            <classifier>adoc</classifier>
+            <type>zip</type>
+        </dependency>
+    </dependencies>
+
+</project>

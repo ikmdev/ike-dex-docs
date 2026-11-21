@@ -1,0 +1,56 @@
+// model-device-performance-pattern
+// Topic: Device Performance Pattern
+// Type: reference
+// Status: draft
+:topic-id: model-device-performance-pattern
+:topic-type: reference
+:topic-status: draft
+:topic-keywords: Device Performance, sensitivity, specificity, confidence interval, performance metric, Test Performed Semantic
+:topic-summary: Defines the Device Performance Pattern, which captures a device's sensitivity and specificity \
+  metrics reported as confidence intervals on a Test Performed Semantic when the source provides them, and \
+  tabulates its six fields.
+:topic-related: model-refined-documentation, model-test-performed-pattern
+
+[[model-device-performance-pattern]]
+= Device Performance Pattern
+
+indexterm:[device data, device performance]
+indexterm:[diagnostic accuracy, sensitivity]
+indexterm:[diagnostic accuracy, specificity]
+indexterm:[knowledge exchange, DeX starter data]
+This Pattern captures information on a device’s performance,
+most commonly sensitivity and specificity metrics which are
+reported as confidence intervals.
+Not every device will have a Device Performance Semantic but
+this Pattern allows a DeX author to input this information when present.
+The reference component is a Test Performed Semantic.
+
+.Device Performance Pattern fields
+[cols="22h,12,66",options="header"]
+|===
+|Field |Field Type |Notes
+
+|Performance Metric
+|Component
+|Use DeX starter data Concept for ‘Sensitivity’, ‘Specificity’, ‘PPA’ or ‘NNA’. Create additional starter data Concepts as needed.
+
+|Performance Metric Value
+|Float
+|
+
+|Example UCUM Units
+|Component
+|Use a SNOMED-CT® Concept
+
+|Confidence Level
+|Float
+|
+
+|Interval Upper Value
+|Float
+|
+
+|Interval Lower Value
+|Float
+|
+|===
