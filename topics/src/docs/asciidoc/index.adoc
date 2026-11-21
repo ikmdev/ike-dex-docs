@@ -54,3 +54,21 @@ include::topics/dex/references.adoc[leveloffset=+2]
 include::topics/engage/stakeholder-purpose.adoc[leveloffset=+2]
 
 include::topics/engage/cec-presentation.adoc[leveloffset=+2]
+
+== LLM-Assisted DeX Authoring (llm)
+
+include::topics/llm/problem-background.adoc[leveloffset=+2]
+
+include::topics/llm/report-purpose.adoc[leveloffset=+2]
+
+include::topics/llm/findings-overview.adoc[leveloffset=+2]
+
+include::topics/llm/assisted-collection.adoc[leveloffset=+2]
+
+include::topics/llm/record-authoring.adoc[leveloffset=+2]
+
+include::topics/llm/device-selection.adoc[leveloffset=+2]
+
+include::topics/llm/limitations.adoc[leveloffset=+2]
+
+include::topics/llm/findings-conclusion.adoc[leveloffset=+2]

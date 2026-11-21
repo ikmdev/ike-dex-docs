@@ -1,0 +1,77 @@
+// llm-record-authoring
+// Topic: LLM-supported Record Authoring
+// Type: concept
+// Status: draft
+:topic-id: llm-record-authoring
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: Komet Assistant, authoring, Concepts, Patterns, Semantics, Xpert Xpress CoV-2, Review Changes Window, human-in-the-loop
+:topic-summary: Describes the Komet Assistant, a built-in LLM chat window that drafts Concepts, Patterns and \
+  Semantics for an IVD device, shown with the Xpert Xpress CoV-2 example, and how its uniform structure \
+  and Review Changes Window reduce variation while keeping a human in the loop.
+:topic-related: llm-findings-overview, llm-limitations
+
+[[llm-record-authoring]]
+= LLM-supported Record Authoring
+
+indexterm:[knowledge exchange, Komet]
+indexterm:[automation, Komet Assistant]
+indexterm:[knowledge exchange, Concept]
+One recent Komet feature is a built-in LLM chat window,
+the Komet Assistant,
+that supports authoring of content by proposing draft versions
+of an IVD device Concept not yet existing in the starter data,
+such as the analyte,
+target, and device company Concepts.
+Figure 1 shows the output for the following prompt that
+requests the Komet Assistant to generate Concepts required for
+the Xpert® Xpress CoV-2 DeX Record:
+
+_“Create Concepts for the following:_
+
+* _Analyte: SARS-CoV-2 (Analyte)_
+* _Targets: SARS-CoV-2 Nucleocapsid protein (N) gene (Target), SARS-CoV-2 Envelope protein (E) gene (Target), SARS-CoV-2 RNA-dependent RNA polymerase protein (RdRP) gene (Target)_
+* _Device Labeler: CEPHEID”_
+
+indexterm:[knowledge exchange, Pattern]
+indexterm:[knowledge exchange, Semantic]
+As shown in the Figure,
+the Komet Assistant generates a table of proposed attributes
+for the Concepts of this IVD device’s analyte,
+targets, and device labeler,
+including its suggested Fully Qualified Names (FQNs) and parent Concepts.
+The user can review,
+make edits in the chat,
+and confirm or decline the proposed attributes.
+Once confirmed,
+the Komet Assistant creates draft versions of these Concepts,
+which the user reviews in the Komet Assistant window before
+publishing the content to the knowledge base.
+The Komet Assistant can also create DeX Patterns and Semantics.
+In Figure 2,
+the Komet Assistant proposes a Test Performed Semantic for the
+Xpert® Xpress CoV-2 device,
+incorporating the previously created Concepts for the device company,
+analyte, and targets as well as Concepts from LOINC®,
+SNOMED-CT® and GUDID.
+
+.Komet Assistant’s output of Xpert® Xpress Cov-2 Concepts
+image::llm/komet-assistant-concept-proposals.png[Screenshot of the Komet Assistant window showing the prompt to create Concepts for SARS-CoV-2 and CEPHEID and a table of five proposed Concepts with their parents and proposal ids,scaledwidth=90%]
+
+.Komet Assistant’s output of Xpert® Xpress Cov-2 Semantic for Test Performed Pattern
+image::llm/komet-assistant-test-performed-semantic.png[Screenshot of the Komet Assistant window showing a proposed Test Performed Semantic for the Xpert Xpress CoV-2 device with its Analyte and Target and Test Performed and Instrument and Specimen and Example UCUM Units fields,scaledwidth=90%]
+
+indexterm:[workflow, record authoring]
+indexterm:[workflow, SME validation]
+The Komet Assistant applies the same structure to each Concept,
+Pattern, and Semantic drafts,
+minimizing variation between authors.
+Similarly,
+for any changes to an existing Concept,
+Pattern, or Semantic or new content created by the Komet Assistant,
+the Review Changes Window shows a granular view of additions and edits,
+supporting version control and human-in-the-loop review.
+The automation of these steps significantly reduces manual
+effort and the interpretation required during authoring,
+shifting the team’s focus to validation and review of the
+resulting content.

@@ -1,0 +1,61 @@
+// llm-device-selection
+// Topic: LLM-assistance in Selecting IVD Devices for Scaling
+// Type: concept
+// Status: draft
+:topic-id: llm-device-selection
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: scaling, throughput, product code, categories, tiers, GUDID, 510(k), decision summary, package insert
+:topic-summary: Explains how an LLM categorized devices by FDA product code into seven categories, filtered GUDID \
+  to about 8,000 IVD devices with a linked 510(k) number, and assigned product codes to Pilot and Tier A to \
+  C by the availability of decision summaries and package inserts.
+:topic-related: llm-findings-overview
+
+[[llm-device-selection]]
+= LLM-assistance in Selecting IVD Devices for Scaling
+
+indexterm:[automation, DeX record scaling]
+indexterm:[device data, product code]
+indexterm:[device data, IVD device]
+The team experimented with reducing manual effort in selecting
+IVD devices by using an LLM to curate a set of 150{plus} IVD
+devices to support throughput of DeX record creation.
+First, the LLM categorized devices by FDA product code and grouped
+them into seven categories:
+at-home tests,
+chemistries,
+genomics, infectious diseases,
+sexually transmitted infections (STI) and human
+immunodeficiency virus (HIV),
+vaccine-preventable diseases,
+and immunology and hematology.
+These categories were selected and verified by the team to
+cover a range of test types and to identify which areas were
+best to scale further.
+For example,
+chemistries and genomics were the largest categories,
+and they may be a focus area to scale additional IVD devices.
+Second, the LLM filtered through millions of devices on GUDID,
+identifying approximately 8,000 IVD devices with a linked 510(k) number.
+Third, the team used the LLM to set quotas for each IVD category and
+assign product codes to a tier based on the availability of
+decision summaries and package inserts.
+These tiers were:
+
+* Pilot: Product codes from which the team has already collected devices and created DeX records through our Version 1 (v1) model.
+* Tier A: Product codes with devices that have a linked decision summary and package insert, and that describe the test kit itself.
+* Tier B: Product codes with devices that have a decision summary and package insert, but that consist of associate devices such as reagents, controls, and calibrators.
+* Tier C: Product codes with devices that lack a decision summary or package insert.
+
+indexterm:[automation, tiering]
+This tiering system allowed the team to focus their efforts on
+the product codes most likely to contribute to the scaling goal,
+prioritizing IVD devices with the most available data while
+maintaining coverage across categories.
+By using an LLM to manage categorization,
+filtering,
+and tiering,
+the team has significantly reduced the manual effort required
+to collect these devices and established a more efficient,
+organized foundation for scaling DeX record production of
+future IVD devices.

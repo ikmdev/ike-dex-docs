@@ -1,0 +1,89 @@
+// llm-problem-background
+// Topic: Background
+// Type: concept
+// Status: draft
+:topic-id: llm-problem-background
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: manual processes, data collection, authoring, Komet, Concept, Pattern, Semantic, consistency, LLM
+:topic-summary: Describes the manual data collection and Komet authoring that DeX relies on today, the \
+  fragmented and incomplete sources behind it, how author interpretation limits consistency, and \
+  why the team explored large-language models for collection, authoring and scaling.
+:topic-scope-note: Frames the problem from the LLM-assistance perspective. For the full current-state \
+  workflow, see dex-background and dex-production-overview.
+
+[[llm-problem-background]]
+= Background
+
+indexterm:[workflow, data collection]
+indexterm:[device data, GUDID]
+indexterm:[device data, 510(k) premarket submission]
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+In its current state,
+Device Extension (DeX) relies on several manual processes for
+data collection and authoring.
+Data collection for a DeX record depends on parsing disparate
+sources of in vitro diagnostic (IVD) device information.
+The process begins with preliminary details from a performing laboratory,
+ideally the Primary Device Identifier (DI),
+which points to one specific IVD device in the Global Unique
+Device Identification Database (GUDID).
+The team then pulls data elements from GUDID,
+the FDA 510(k) premarket submission,
+the manufacturer’s package insert or instructions for use (IFU),
+and various other documentation sources as needed.
+No single source is complete:
+the 510(k) number is not always listed in GUDID,
+some older decision summaries lack performance characteristics,
+and DI numbers for associated instruments and devices are
+rarely provided.
+The Logical Observation Identifiers Names and Codes (LOINC^®)^
+and Systematized Nomenclature of Medicine,
+Clinical Terms (SNOMED-CT®) codes must also be manually searched,
+and multi-analyte IVD devices require a separate code for each test.
+Additionally,
+a laboratory device subject matter expert (SME) validates each
+step as the information is gathered.
+
+indexterm:[knowledge exchange, Komet]
+indexterm:[knowledge exchange, Concept]
+indexterm:[knowledge exchange, Pattern]
+indexterm:[knowledge exchange, Semantic]
+indexterm:[data quality, variability]
+Once collected,
+this information is authored in Komet,
+the knowledge-base tool where DeX records are built,
+by building Patterns and Semantics that attach to an IVD device Concept.
+A Concept is a single,
+well-defined entity such as the IVD device itself.
+Patterns are reusable templates for one type of information,
+such as the tests performed on the IVD device,
+and Semantics are populated instances of those Patterns holding
+the actual values.
+Fields drawn from existing sources can be populated from
+structured data,
+but fields representing new DeX components must be located,
+interpreted,
+and entered by hand from unstructured 510(k) documents and
+package inserts.
+Because different authors can reasonably interpret the same
+document differently,
+consistency is limited,
+which can affect how users view the IVD device Concept.
+
+indexterm:[automation, LLM assistance]
+indexterm:[automation, DeX record scaling]
+These challenges related to fragmented sources,
+gaps in documentation,
+and manual interpretation during authoring limit how
+consistently and quickly DeX records can be produced for
+additional IVD devices.
+To address these challenges,
+the team explored how large-language models (LLMs) can support
+data collection and authoring into Komet while maintaining
+appropriate levels of human review and validation.
+The team also explored scaling,
+or increasing the throughput of DeX record creation,
+by using LLMs to help select a range of IVD devices and
+aggregate data from source documentation to build additional records.

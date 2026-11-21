@@ -1,0 +1,88 @@
+// llm-assisted-collection
+// Topic: LLM-supported Data Collection
+// Type: concept
+// Status: draft
+:topic-id: llm-assisted-collection
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: data collection, GUDID, 510(k) decision summary, VITROS ALB, LOINC, SNOMED CT, AsciiDoc, ingestion pipeline, hallucination
+:topic-summary: Reports how an LLM identified IVD devices, retrieved GUDID records and 510(k) decision summaries \
+  and extracted data elements, with about 84% of fields matching the manual record, and how its \
+  conversion of source documents to AsciiDoc proved too unreliable for verbatim reproduction.
+:topic-related: llm-findings-overview, llm-limitations
+
+[[llm-assisted-collection]]
+= LLM-supported Data Collection
+
+indexterm:[automation, LLM-assisted data collection]
+indexterm:[device data, GUDID]
+indexterm:[device data, decision summary]
+indexterm:[device data, GMDN]
+For data collection,
+the team tested how an LLM can identify IVD devices,
+retrieve source documentation,
+and extract information.
+Following the steps for manually creating DeX records,
+the team used an LLM to retrieve GUDID records and 510(k)
+decision summaries given a DI number for an IVD device.
+In testing with the IVD device,
+VITROS Chemistry Products ALB Slides,
+the LLM located and extracted the brand name,
+version, manufacturer,
+Global Medical Device Nomenclature (GMDN) term name and code,
+and FDA product name and code from GUDID.
+Although GUDID did not list the 510(k) number,
+the LLM identified it by reasoning through the IVD device’s predicate,
+and the SME confirmed its accuracy.
+The LLM then located the 510(k) decision summary in the public
+FDA database and extracted the analyte,
+target, specimen type,
+detection limit,
+reference range,
+and units of measure.
+Finally, the LLM also searched for and identified appropriate LOINC® and
+SNOMED-CT® codes for each analyte and specimen type result description.
+
+indexterm:[data quality, extraction accuracy]
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+Approximately 84% of LLM-extracted fields matched the manually
+collected record.
+Errors were concentrated in identifying LOINC® and SNOMED-CT® codes,
+and in locating associated devices and instruments’ DI numbers.
+These areas are also challenging in the manual process,
+requiring further searching and SME validation.
+The results show that LLMs can extract information from a given
+data element or source documentation and significantly reduce
+manual effort in building the DeX record.
+The team also plans to test whether an LLM can propose
+shortlists of LOINC® and SNOMED-CT® codes and DI numbers for
+associated devices,
+which could narrow what the SME needs to review.
+
+indexterm:[automation, AI-assisted conversion]
+indexterm:[automation, DeX creation pipeline]
+To support extraction of data from source documents,
+the team also explored using an LLM to convert them into AsciiDoc,
+a plain-text markup language.
+This format provides a consistent structure that would allow
+the same data elements to be located and pulled from every document,
+aggregating them into a record more efficiently and increasing
+throughput of DeX record creation.
+The team designed an ingestion pipeline through an LLM that
+reads each original source document,
+assigns tags and headers according to a specific standard,
+and outputs an AsciiDoc file.
+However, the LLM did not replicate the original documents accurately as
+it would paraphrase,
+omit, and at times hallucinate text and device data.
+Transcriptions of the same page also varied from run to run,
+and without a reliable method for checking accuracy,
+validation of the output became time consuming and repetitive.
+These findings showed that,
+although LLMs can accelerate the extraction of structured data,
+reproducing source documents accurately requires detailed
+instructions with supporting data,
+additional training,
+and tighter guardrails in LLM prompting,
+as well as a more deterministic approach that uses LLM where appropriate.

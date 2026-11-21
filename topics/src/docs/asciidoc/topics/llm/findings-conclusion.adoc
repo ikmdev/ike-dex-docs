@@ -1,0 +1,37 @@
+// llm-findings-conclusion
+// Topic: Conclusion
+// Type: concept
+// Status: draft
+:topic-id: llm-findings-conclusion
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: conclusion, manual effort, verbatim reproduction, rule-based checks, human review, accountability
+:topic-summary: Concludes that early tests show LLM assistance can meaningfully reduce manual effort in DeX data collection, \
+  authoring and scaling, but is unsuited to verbatim reproduction of source documents, so the team is shifting \
+  to rule-based checks while keeping human review at every stage.
+:topic-scope-note: Concludes the LLM-assistance findings. For the current-state conclusion, see dex-conclusion.
+
+[[llm-findings-conclusion]]
+= Conclusion
+
+indexterm:[automation, LLM assistance]
+indexterm:[automation, rule-based extraction]
+These early tests show that LLM-assisted processes can
+meaningfully reduce the manual effort of building DeX records
+across data collection and authoring,
+along with device selection and data aggregation for scaling.
+They also show where LLMs fall short:
+they are not suited for verbatim reproduction of source documents,
+which is why the team is shifting toward rule-based checks
+where accuracy can be controlled.
+
+indexterm:[workflow, SME validation]
+indexterm:[knowledge exchange, DeX record]
+Human review remains essential at every stage.
+The team reviews LLM-extracted fields before they are accepted,
+validates Komet Assistant drafts before they are published,
+and confirms that each IVD device selected for scaling has the
+source data needed for a complete record.
+With these checkpoints in place,
+LLMs can accelerate DeX authoring while the team remains
+accountable for the accuracy and consistency of DeX records.

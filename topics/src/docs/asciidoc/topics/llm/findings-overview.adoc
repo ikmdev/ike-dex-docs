@@ -1,0 +1,30 @@
+// llm-findings-overview
+// Topic: Findings of Early LLM-Assisted DeX Record Creation
+// Type: concept
+// Status: draft
+:topic-id: llm-findings-overview
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: findings, data collection, authoring, scaling, limitations, human validation
+:topic-summary: Introduces the team's tests of LLM assistance across data collection, authoring and scaling, \
+  notes the limits found in identifying data elements and in converting source documents to AsciiDoc, \
+  and stresses that human validation remained essential throughout.
+:topic-related: llm-assisted-collection, llm-record-authoring, llm-device-selection, llm-limitations
+
+[[llm-findings-overview]]
+= Findings of Early LLM-Assisted DeX Record Creation
+
+indexterm:[automation, LLM assistance]
+indexterm:[automation, DeX record scaling]
+indexterm:[workflow, SME validation]
+The team tested LLM assistance across data collection and authoring,
+as well as scaling,
+or increasing the throughput of DeX record creation,
+by selecting IVD devices and aggregating data from source documentation.
+The team also explored the limitations of LLMs,
+including challenges in identifying specific data elements for
+a DeX record and converting source documentation into AsciiDoc format.
+Across each of these processes,
+human validation remained essential,
+as LLM outputs require review before they can be accepted and
+used to build DeX records.

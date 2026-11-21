@@ -1,0 +1,22 @@
+// llm-report-purpose
+// Topic: Purpose
+// Type: concept
+// Status: draft
+:topic-id: llm-report-purpose
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: deliverable, hands-on tests, LLM assistance, human review, effectiveness, limitations
+:topic-summary: States that the deliverable documents hands-on tests of LLM assistance in DeX creation under \
+  human review, with practical findings on how effective the assistance is and where it falls short.
+:topic-notes: Below the 500-character minimum. Kept as its own topic so the source document's heading \
+  structure survives reassembly; merging it would change the chapter list.
+
+[[llm-report-purpose]]
+= Purpose
+
+indexterm:[automation, LLM assistance]
+indexterm:[workflow, SME validation]
+indexterm:[workflow, record authoring]
+The purpose of this deliverable is to provide documentation of
+hands-on tests exploring LLM assistance in DeX creation under human review,
+with practical findings on effectiveness and limitations.

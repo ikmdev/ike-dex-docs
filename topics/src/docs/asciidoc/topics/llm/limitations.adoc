@@ -1,0 +1,47 @@
+// llm-limitations
+// Topic: Limitations & Human Validation
+// Type: concept
+// Status: draft
+:topic-id: llm-limitations
+:topic-type: concept
+:topic-status: draft
+:topic-keywords: limitations, human validation, bounded tasks, LOINC, SNOMED CT, AsciiDoc reproduction, rule-based extraction, Komet Assistant
+:topic-summary: Summarizes where LLMs fell short, in identifying data elements missing from sources and in reproducing \
+  source documents as AsciiDoc, and the team's response: consolidating sources, making ingestion more \
+  deterministic and strengthening Komet Assistant review support.
+:topic-related: llm-findings-overview, llm-assisted-collection, llm-record-authoring
+
+[[llm-limitations]]
+= Limitations & Human Validation
+
+indexterm:[automation, LLM limitations]
+indexterm:[terminology, LOINC]
+indexterm:[terminology, SNOMED CT]
+Although LLMs have reduced manual effort in data collection and authoring,
+and supported increased throughput of DeX record creation,
+testing showed that LLMs perform best when the task is bounded
+and the source data is complete,
+but they can falter when either condition is missing.
+First, in data collection,
+LLMs struggled to identify specific data elements that are not
+explicitly included in source documentation,
+such as LOINC® and SNOMED-CT® codes and DI numbers for
+associated devices.
+Second, LLMs could not consistently reproduce source documents to AsciiDoc,
+which required further review and validation of the output.
+
+indexterm:[workflow, SME validation]
+indexterm:[automation, rule-based extraction]
+The team is responding by consolidating source documentation,
+making ingestion more deterministic,
+and strengthening the Komet Assistant’s support for review.
+For the devices identified through LLM filtering,
+the team is gathering 510(k) decision summaries and package
+inserts in one repository and prioritizing product codes with
+the most complete data.
+The team is also moving the document ingestion process towards
+rule-based extraction and verification,
+limiting LLMs to well-defined tasks wherever possible.
+Human review remains part of each step,
+from verifying extracted device data to validating ingestion
+output against its source and reviewing Komet Assistant drafts.
