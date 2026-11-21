@@ -1174,6 +1174,46 @@ class Renderer(unittest.TestCase):
         self.assertEqual(cf.check_tables(pdf, adoc)["banners"]["missing"], [])
 
 
+class DocxParagraphMarks(unittest.TestCase):
+    """A bold paragraph mark (``w:pPr/w:rPr``) must not make the paragraph's text bold."""
+
+    @staticmethod
+    def docx(body: str) -> bytes:
+        import io
+        import zipfile
+
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as z:
+            z.writestr("word/document.xml", f'<w:document xmlns:w="w"><w:body>{body}</w:body></w:document>')
+            z.writestr("docProps/core.xml", "<core/>")
+        return out.getvalue()
+
+    @staticmethod
+    def document_xml(data: bytes) -> str:
+        import io
+        import zipfile
+
+        return zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml").decode()
+
+    def test_mark_formatting_is_removed_and_run_formatting_kept(self) -> None:
+        import document_to_asciidoc as d
+
+        body = (
+            '<w:p><w:pPr><w:spacing w:after="240"/><w:rPr><w:b/><w:bCs/></w:rPr></w:pPr>'
+            '<w:r><w:t>plain</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:rPr><w:i/></w:rPr></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>italic</w:t></w:r></w:p>'
+        )
+        xml = self.document_xml(d._strip_paragraph_mark_formatting(self.docx(body)))
+        self.assertNotIn("<w:bCs/>", xml)
+        self.assertEqual(xml.count("<w:b/>"), 1)  # the run's, not the mark's
+        self.assertEqual(xml.count("<w:i/>"), 1)
+        self.assertIn('<w:spacing w:after="240"/>', xml)
+
+    def test_a_non_docx_or_unmarked_file_is_returned_unchanged(self) -> None:
+        import document_to_asciidoc as d
+
+        self.assertEqual(d._strip_paragraph_mark_formatting(b"not a zip"), b"not a zip")
+
 
 if __name__ == "__main__":
     unittest.main()

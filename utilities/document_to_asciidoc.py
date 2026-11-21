@@ -148,6 +148,41 @@ def _docx_title(data: bytes) -> Optional[str]:
     return title
 
 
+_PARAGRAPH_MARK_RPR_RE = re.compile(
+    r"(<w:pPr\b[^>]*>(?:(?!</w:pPr>).)*?)<w:rPr\b[^>]*?(?:/>|>(?:(?!</w:rPr>).)*?</w:rPr>)",
+    re.DOTALL,
+)
+
+
+def _strip_paragraph_mark_formatting(data: bytes) -> bytes:
+    """Drop the paragraph-mark run properties (``w:pPr/w:rPr``) from a .docx.
+
+    Word keeps the formatting of a paragraph's end mark there (bold, italic, size). It styles
+    only the mark itself, never the paragraph's text, yet the Docling reader applies it to the
+    whole paragraph, so a paragraph whose mark is bold comes out entirely bold. The text's own
+    formatting lives on its runs and is untouched.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as source:
+            names = [n for n in source.namelist() if re.fullmatch(r"word/(document|footnotes|endnotes)\.xml", n)]
+            if not names:
+                return data
+            out = io.BytesIO()
+            with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target:
+                for item in source.infolist():
+                    content = source.read(item.filename)
+                    if item.filename in names:
+                        text = content.decode("utf-8")
+                        # Only the pPr's own rPr: pPr holds no run children, so the first
+                        # rPr inside it is the paragraph mark's.
+                        text = _PARAGRAPH_MARK_RPR_RE.sub(r"\1", text)
+                        content = text.encode("utf-8")
+                    target.writestr(item, content)
+            return out.getvalue()
+    except (zipfile.BadZipFile, UnicodeDecodeError):
+        return data
+
+
 def _heading_lines(lines: list[str]) -> list[tuple[int, int, str]]:
     """(line index, level, text) for each Markdown heading outside code fences."""
     headings = []
@@ -378,8 +413,9 @@ class DocumentToAsciiDocConverter:
 
         # Docling selects its parser from the stream name's extension, so the
         # name must carry the detected extension rather than the caller's.
-        stream = DocumentStream(name=f"{stem}{extension}", stream=io.BytesIO(data))
-        document = self._docling_converter().convert(stream, raises_on_error=True).document
+        docling_data = _strip_paragraph_mark_formatting(data) if extension == ".docx" else data
+        stream = DocumentStream(name=f"{stem}{extension}", stream=io.BytesIO(docling_data))
+        document =self._docling_converter().convert(stream, raises_on_error=True).document
 
         write_images = self._extract_images and images_dir is not None
         with tempfile.TemporaryDirectory() as tmp:
